@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#080b09">
+<meta name="description" content="Discover Telegram collectibles, rare usernames and +888 numbers at Quest Market.">
+<title>Quest Market — Collect with intent</title>
+<script src="https://telegram.org/js/telegram-web-app.js?64"></script>
+<style>
+:root{color-scheme:dark;--bg:#080b09;--panel:#101512;--panel2:#151c17;--panel3:#1b241e;--line:#252e28;--ink:#f4f7f2;--muted:#8d9b91;--green:#b8ff48;--green2:#79df34;--green-dim:#23341b;--blue:#2089ff;--radius:22px}
+*{box-sizing:border-box}
+html{background:var(--bg);scroll-behavior:smooth}
+body{margin:0;color:var(--ink);background:radial-gradient(70rem 44rem at 94% -16rem,#19301c 0%,transparent 70%),radial-gradient(46rem 28rem at -18rem 27rem,#111d15 0%,transparent 72%),var(--bg);font:15px/1.45 Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;min-height:100vh}
+button,input,select{font:inherit}
+button{color:inherit;cursor:pointer}
+a{color:inherit}
+.topbar{position:sticky;top:0;z-index:10;background:#080b09eF;border-bottom:1px solid #ffffff10;backdrop-filter:blur(20px) saturate(130%);padding:0 max(20px,calc((100vw - 1440px)/2))}
+.topline{height:76px;display:flex;align-items:center;gap:35px}
+.brand{display:flex;align-items:center;gap:12px;min-width:245px;text-decoration:none;font-size:15px;font-weight:850;letter-spacing:.13em}
+.brand-mark{width:35px;height:35px;border-radius:12px;display:grid;place-items:center;color:#071007;background:var(--green);font-weight:950;font-size:20px;letter-spacing:-.08em;box-shadow:0 0 28px #a5ff3a33}
+.brand-name span{color:var(--green)}
+.brand-name small{display:block;margin-top:-2px;color:#819087;font-size:8px;letter-spacing:.28em}
+.top-spacer{flex:1}
+.market-status{display:flex;align-items:center;gap:8px;color:#c6d1c9;font-size:12px;font-weight:650}
+.live-dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 12px #b8ff48}
+.top-button{border:1px solid #ffffff18;border-radius:12px;background:#121813;padding:10px 15px;font-weight:700;font-size:12px}
+.top-button:hover{border-color:#b8ff4866;color:var(--green)}
+.nav{display:flex;gap:7px;padding:0 0 13px;overflow:auto;scrollbar-width:none}
+.nav::-webkit-scrollbar{display:none}
+.nav button{display:flex;align-items:center;gap:9px;border:1px solid transparent;border-radius:11px;background:transparent;color:#87938b;padding:10px 15px;white-space:nowrap;font-size:13px;font-weight:720;transition:.18s}
+.nav button:hover{color:var(--ink);background:#ffffff08}
+.nav button.active{background:#b8ff4813;border-color:#b8ff4836;color:var(--green)}
+.nav .nav-index{font-size:10px;color:#59685d;font-weight:600}
+.nav button.active .nav-index{color:#91bd67}
+.main{width:min(100% - 40px,1360px);margin:0 auto;padding:26px 0 72px}
+.hero{position:relative;overflow:hidden;min-height:225px;border:1px solid #b8ff4826;border-radius:26px;background:linear-gradient(112deg,#152018 0%,#101813 47%,#18221a 100%);padding:35px 42px;display:flex;align-items:center;justify-content:space-between;gap:25px}
+.hero:before{content:"";position:absolute;width:450px;height:450px;right:160px;top:-290px;border:1px solid #b8ff481a;border-radius:50%;box-shadow:0 0 0 40px #b8ff4806,0 0 0 80px #b8ff4804}
+.hero:after{content:"";position:absolute;width:290px;height:290px;right:-72px;bottom:-180px;border-radius:50%;background:#82f43813;filter:blur(8px)}
+.hero-copy,.hero-stats{position:relative;z-index:1}
+.eyebrow{display:inline-flex;align-items:center;gap:9px;color:var(--green);font-size:10px;letter-spacing:.17em;font-weight:800}
+.eyebrow:before{content:"";width:18px;height:1px;background:var(--green)}
+.hero h1{max-width:690px;margin:13px 0 8px;font-size:clamp(30px,4vw,49px);line-height:1.02;letter-spacing:-.055em;font-weight:820}
+.hero h1 span{color:var(--green)}
+.hero-copy p{max-width:560px;margin:12px 0 0;color:#9aa79d;font-size:14px}
+.hero-stats{min-width:230px;padding-left:27px;border-left:1px solid #ffffff17}
+.hero-stats .stat-value{font-size:42px;line-height:1;font-weight:820;letter-spacing:-.06em}
+.hero-stats .stat-label{margin-top:9px;color:#b5c0b8;font-size:12px}
+.stat-caption{margin-top:17px;display:flex;align-items:center;gap:7px;color:#77847a;font-size:10px;letter-spacing:.12em;font-weight:750;text-transform:uppercase}
+.toolbar{padding:31px 0 18px}
+.heading-row{display:flex;align-items:end;justify-content:space-between;gap:18px;margin-bottom:18px}
+.section-kicker{color:#77867b;font-size:10px;font-weight:800;letter-spacing:.17em}
+.heading-row h2{margin:5px 0 0;font-size:26px;letter-spacing:-.045em}
+.heading-row p{margin:5px 0 0;color:var(--muted);font-size:13px}
+.result-count{color:#aab5ad;font-size:12px;white-space:nowrap}
+.result-count b{color:var(--green);font-size:16px;margin-right:5px}
+.controls{display:grid;grid-template-columns:minmax(200px,1fr) minmax(180px,245px) 180px;gap:10px}
+.search-wrap{height:50px;display:flex;align-items:center;gap:11px;border:1px solid #ffffff12;border-radius:14px;background:#111713;padding:0 15px;color:#7d8980}
+.search-wrap:focus-within{border-color:#b8ff4866;box-shadow:0 0 0 3px #b8ff480d}
+.search-wrap svg{width:17px;flex:none}
+.search-wrap input{width:100%;border:0;outline:0;background:transparent;color:var(--ink);font-size:13px}
+.search-wrap input::placeholder{color:#738077}
+.control-select{height:50px;border:1px solid #ffffff12;border-radius:14px;background:#111713;color:#d3dbd5;padding:0 14px;outline:0;font-size:12px}
+.control-select:focus{border-color:#b8ff4866}
+.catalog-layout{display:grid;grid-template-columns:220px minmax(0,1fr);align-items:start;gap:18px}
+.sidebar{position:sticky;top:159px;border:1px solid #ffffff10;border-radius:18px;background:#0e130f;overflow:hidden}
+.sidebar-head{padding:17px 17px 12px;border-bottom:1px solid #ffffff0a}
+.sidebar-head b{display:block;font-size:12px}
+.sidebar-head span{display:block;margin-top:4px;color:#768279;font-size:10px}
+.collection-list{max-height:calc(100vh - 310px);overflow:auto;padding:8px}
+.collection-list button{width:100%;min-height:39px;display:flex;align-items:center;justify-content:space-between;gap:8px;border:0;border-radius:9px;background:transparent;color:#a7b1a9;padding:0 10px;text-align:left;font-size:11px}
+.collection-list button:hover{background:#ffffff08;color:var(--ink)}
+.collection-list button.selected{background:#b8ff4812;color:var(--green)}
+.collection-list button small{color:#65736a;font-size:10px}
+.mobile-collections{display:none}
+.gift-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.gift-card{min-width:0;overflow:hidden;border:1px solid #ffffff12;border-radius:20px;background:linear-gradient(155deg,#151b17,#101411 58%);cursor:pointer;transition:transform .2s,border-color .2s,box-shadow .2s}
+.gift-card:hover{transform:translateY(-3px);border-color:#b8ff4855;box-shadow:0 16px 40px #0008}
+.gift-art{position:relative;aspect-ratio:1/1;overflow:hidden;margin:9px 9px 0;border-radius:14px;background:radial-gradient(circle at 52% 43%,#fff2 0 2%,transparent 42%),linear-gradient(145deg,var(--art-a,#26382a),var(--art-b,#101612));display:grid;place-items:center}
+.gift-art:before,.gift-art:after{content:"";position:absolute;border:1px solid #ffffff10;border-radius:50%;width:70%;height:70%}
+.gift-art:after{width:48%;height:48%;border-color:#ffffff0d}
+.gift-art img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1;transition:transform .3s}
+.gift-card:hover .gift-art img{transform:scale(1.035)}
+.gift-glyph{position:relative;z-index:1;font-size:clamp(54px,7vw,94px);filter:drop-shadow(0 14px 22px #0007)}
+.art-top,.art-bottom{position:absolute;z-index:2;left:11px;right:11px;display:flex;align-items:center;justify-content:space-between}
+.art-top{top:11px}
+.art-bottom{bottom:11px}
+.pill{padding:6px 8px;border:1px solid #ffffff23;border-radius:99px;background:#080b09aa;backdrop-filter:blur(10px);font-size:8px;letter-spacing:.11em;font-weight:800}
+.pill.green{border-color:#b8ff4845;color:var(--green)}
+.open-icon{width:27px;height:27px;display:grid;place-items:center;border-radius:50%;background:#080b09aa;border:1px solid #ffffff25;color:#d8e0d9}
+.open-icon svg{width:13px}
+.card-info{padding:13px 14px 14px}
+.card-meta{display:flex;align-items:center;justify-content:space-between;gap:7px;color:#87958b;font-size:10px}
+.collection-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.card-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:6px;font-size:14px;font-weight:760;letter-spacing:-.015em}
+.card-bottom{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:12px;padding-top:11px;border-top:1px solid #ffffff0d}
+.card-price{flex:1;min-width:0;min-height:38px;display:flex;align-items:center;justify-content:center;gap:5px;border-radius:11px;background:var(--green);color:#091007;font-size:14px;font-weight:900;letter-spacing:-.02em;white-space:nowrap}
+.card-price small{color:#26391b;font-size:9px;letter-spacing:.08em}
+.card-arrow{width:38px;height:38px;border:1px solid #ffffff16;border-radius:11px;background:#1d251f;display:grid;place-items:center;color:#dbe6dc;font-weight:800}
+.listing-table{width:100%;border:1px solid #ffffff10;border-radius:18px;overflow:hidden;background:#0e130f}
+.list-head,.listing-row{display:grid;grid-template-columns:minmax(190px,1.4fr) minmax(150px,.8fr) 35px;align-items:center;gap:14px}
+.list-head{min-height:43px;padding:0 19px;background:#151c17;color:#7e8c82;font-size:9px;letter-spacing:.13em;font-weight:800}
+.listing-row{min-height:69px;padding:9px 19px;border-top:1px solid #ffffff0b;cursor:pointer;transition:background .15s}
+.listing-row:hover{background:#161e18}
+.listing-name{min-width:0}
+.listing-name strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+.listing-name small{display:block;margin-top:3px;color:#83a675;font-size:10px}
+.list-price{font-size:14px;font-weight:780;white-space:nowrap}
+.list-price small{color:#77857b;font-size:9px;letter-spacing:.08em}
+.row-arrow{color:#718078;font-size:18px;text-align:right}
+.empty{padding:54px 20px;border:1px solid #ffffff10;border-radius:18px;background:#101512;color:#87958b;text-align:center}
+.load-more{display:flex;justify-content:center;padding:22px 0 0}
+.load-more button{min-height:43px;border:1px solid #ffffff16;border-radius:12px;background:#121813;padding:0 19px;color:#dfe6e0;font-size:12px;font-weight:700}
+.load-more button:hover{border-color:#b8ff4855;color:var(--green)}
+.load-more button:disabled{opacity:.5;cursor:wait}
+.fineprint{display:flex;align-items:center;gap:8px;margin-top:19px;color:#667369;font-size:10px}
+.fineprint:before{content:"";width:6px;height:6px;border-radius:50%;background:#657665}
+.toast{position:fixed;z-index:30;left:50%;bottom:calc(22px + env(safe-area-inset-bottom));transform:translate(-50%,12px);opacity:0;pointer-events:none;padding:12px 17px;max-width:calc(100% - 30px);border:1px solid #b8ff4833;border-radius:13px;background:#172018;color:#eff6ed;font-size:12px;box-shadow:0 12px 42px #000a;transition:.2s}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+dialog{width:min(480px,calc(100vw - 28px));max-height:calc(100dvh - 34px);overflow:auto;border:1px solid #ffffff1c;border-radius:24px;padding:0;background:#111713;color:var(--ink);box-shadow:0 30px 100px #000c}
+dialog::backdrop{background:#000b;backdrop-filter:blur(8px)}
+.dialog-art{position:relative;aspect-ratio:1/1;margin:10px;border-radius:17px;overflow:hidden;display:grid;place-items:center;background:linear-gradient(135deg,#26392a,#101612)}
+.dialog-art img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.dialog-art .gift-glyph{font-size:110px}
+.dialog-body{padding:9px 20px 21px}
+.dialog-top{display:flex;align-items:start;justify-content:space-between;gap:12px}
+.dialog-top h3{margin:4px 0 0;font-size:21px;letter-spacing:-.04em}
+.dialog-top p{margin:5px 0 0;color:#859289;font-size:12px}
+.close{width:35px;height:35px;border:1px solid #ffffff15;border-radius:11px;background:#1a211b;color:#d7e0d8;font-size:20px}
+.dialog-price{margin:17px 0 5px;font-size:25px;font-weight:850;letter-spacing:-.045em}
+.dialog-price small{font-size:11px;color:#a3afa5;letter-spacing:.1em}
+.dialog-note{color:#819087;font-size:11px}
+.dialog-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:19px}
+.action{min-height:46px;display:grid;place-items:center;border:1px solid #ffffff15;border-radius:12px;background:#1a211b;color:#dbe4dd;text-decoration:none;font-size:11px;font-weight:780;text-align:center;padding:8px}
+.action.primary{border-color:var(--green);background:var(--green);color:#081006}
+.action.primary:hover{background:#d0ff89}
+.action:disabled{opacity:.45}
+.nft-id{position:absolute;right:11px;bottom:11px;z-index:3}
+.mobile-dock{display:none}
+.mobile-dock button{min-width:0;min-height:55px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border:1px solid transparent;border-radius:16px;background:transparent;color:#849087;font-size:9px;font-weight:700;transition:.18s}
+.mobile-dock button.active{background:#b8ff4818;border-color:#b8ff4836;color:var(--green)}
+.dock-icon{height:20px;display:grid;place-items:center;font-size:17px;font-weight:850;line-height:1}
+.dock-icon svg{width:19px;height:19px}
+@media(max-width:1120px){.gift-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.catalog-layout{grid-template-columns:190px minmax(0,1fr)}}
+@media(max-width:760px){
+ .topbar{padding:0 14px}.topline{height:61px;gap:12px}.brand{min-width:auto;font-size:13px}.brand-mark{width:31px;height:31px;border-radius:10px}.top-button{padding:8px 10px;font-size:10px}.market-status{font-size:10px}.nav{display:none}
+ .main{width:calc(100% - 24px);padding:15px 0 calc(112px + env(safe-area-inset-bottom))}.hero{min-height:190px;padding:24px 21px;border-radius:21px}.hero h1{font-size:31px;max-width:390px}.hero-copy p{font-size:12px;max-width:350px}.hero-stats{min-width:100px;padding-left:15px}.hero-stats .stat-value{font-size:31px}.hero-stats .stat-label{font-size:10px}.stat-caption{font-size:8px}
+ .toolbar{padding:24px 0 13px}.heading-row{margin-bottom:13px}.heading-row h2{font-size:22px}.heading-row p{font-size:11px}.section-kicker{font-size:8px}.result-count{font-size:10px}
+ .controls{grid-template-columns:minmax(0,1fr) 125px;gap:8px}.search-wrap{height:45px;padding:0 12px;border-radius:13px}.search-wrap input{font-size:12px}.control-select{height:45px;padding:0 9px;border-radius:13px;font-size:10px}
+ .catalog-layout{display:block}.sidebar{display:none}.mobile-collections{display:flex;gap:7px;overflow:auto;padding:1px 0 13px;scrollbar-width:none}.mobile-collections::-webkit-scrollbar{display:none}.mobile-collections button{flex:none;min-height:31px;border:1px solid #ffffff13;border-radius:99px;background:#111713;color:#95a198;padding:0 12px;font-size:9px}.mobile-collections button.selected{border-color:#b8ff4855;color:var(--green);background:#b8ff4810}
+ .gift-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.gift-card{border-radius:17px}.gift-art{margin:7px 7px 0;border-radius:12px}.card-info{padding:10px 10px 11px}.card-meta{font-size:8px}.card-title{font-size:12px;margin-top:4px}.card-bottom{margin-top:9px;padding-top:9px}.card-price{font-size:12px}.card-price small{font-size:8px}.pill{padding:5px 6px;font-size:7px}.open-icon{width:24px;height:24px}
+ .list-head,.listing-row{grid-template-columns:minmax(0,1fr) auto 22px;gap:9px}.list-head{padding:0 12px;font-size:8px}.listing-row{min-height:62px;padding:9px 12px}.listing-name strong{font-size:11px}.listing-name small{font-size:9px}.list-price{font-size:12px}.row-arrow{font-size:16px}
+ .fineprint{font-size:9px;margin-top:14px}.dialog-actions{grid-template-columns:1fr}.dialog-body{padding:8px 16px 18px}.dialog-price{font-size:23px}
+ .mobile-dock{position:fixed;z-index:20;left:50%;bottom:calc(9px + env(safe-area-inset-bottom));transform:translateX(-50%);width:min(440px,calc(100% - 24px));display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;padding:7px;border:1px solid #ffffff1a;border-radius:23px;background:#111613eF;backdrop-filter:blur(24px) saturate(145%);box-shadow:0 14px 50px #000b,0 0 28px #8df4360a}
+}
+@media(max-width:380px){.hero{padding:19px 15px}.hero h1{font-size:27px}.hero-stats{min-width:84px;padding-left:10px}.hero-stats .stat-value{font-size:26px}.gift-grid{gap:8px}.controls{grid-template-columns:minmax(0,1fr) 112px}}
+</style>
+</head>
+<body>
+<header class="topbar">
+ <div class="topline">
+  <a class="brand" href="#" aria-label="Quest Market home"><span class="brand-mark">Q</span><span class="brand-name">QUEST <span>MARKET</span><small>TELEGRAM COLLECTIBLES</small></span></a>
+  <div class="top-spacer"></div>
+  <span class="market-status"><i class="live-dot"></i><span id="account-label">GRAM · NFT CATALOG</span></span>
+  <button class="top-button" id="telegram-button" type="button">Open Telegram ↗</button>
+ </div>
+ <nav class="nav" aria-label="Market categories">
+  <button class="active" data-category="gift"><span>Gifts</span><span class="nav-index">01</span></button>
+  <button data-category="username"><span>Usernames</span><span class="nav-index">02</span></button>
+  <button data-category="number"><span>+888 Numbers</span><span class="nav-index">03</span></button>
+ </nav>
+</header>
+<main class="main">
+ <section class="hero">
+  <div class="hero-copy">
+   <span class="eyebrow">TELEGRAM COLLECTIBLES · QUEST MARKET</span>
+   <h1>Collect what <span>speaks to you.</span></h1>
+   <p>Discover rare gifts, distinctive usernames and collectible +888 numbers. Every price in GRAM.</p>
+  </div>
+  <div class="hero-stats">
+   <div class="stat-value" id="total-stat">129</div>
+   <div class="stat-label" id="stat-label">collectible gifts</div>
+   <div class="stat-caption"><i class="live-dot"></i> CURATED ON TELEGRAM</div>
+  </div>
+ </section>
+ <section class="toolbar">
+  <div class="heading-row">
+   <div><span class="section-kicker">EXPLORE THE MARKET</span><h2 id="category-title">Gifts</h2><p id="category-subtitle">Telegram collectibles, ready to discover.</p></div>
+   <div class="result-count"><b id="visible-count">129</b><span id="count-label">items</span></div>
+  </div>
+  <div class="controls">
+   <label class="search-wrap" aria-label="Search listings">
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8" stroke="currentColor" stroke-width="1.7"/><path d="m16 16 4.4 4.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+    <input id="search" type="search" placeholder="Search gifts, collections, numbers…" autocomplete="off">
+   </label>
+   <select class="control-select" id="collection-filter" aria-label="Filter by collection"><option value="">All collections</option></select>
+   <select class="control-select" id="sort" aria-label="Sort listings">
+   <option value="featured">Featured</option><option value="recent">Recently added</option><option value="price_asc">Price: low to high</option><option value="price_desc">Price: high to low</option>
+   </select>
+  </div>
+ </section>
+ <div class="mobile-collections" id="mobile-collections" aria-label="Gift collections"></div>
+ <div class="catalog-layout">
+  <aside class="sidebar" id="sidebar">
+   <div class="sidebar-head"><b>Gift collections</b><span>Filter by collectible family</span></div>
+   <div class="collection-list" id="collection-list"></div>
+  </aside>
+  <section id="catalog" aria-live="polite"></section>
+ </div>
+ <div class="load-more" id="load-more" hidden><button type="button">Load more listings</button></div>
+ <div class="fineprint" id="fineprint">Listings and prices shown in GRAM · Select a collectible to view its Telegram page.</div>
+</main>
+<dialog id="item-dialog">
+ <div class="dialog-art" id="dialog-art"><span class="gift-glyph" id="dialog-glyph">✦</span><span class="pill nft-id" id="dialog-id">TELEGRAM NFT</span></div>
+ <div class="dialog-body">
+  <div class="dialog-top"><div><span class="section-kicker" id="dialog-collection">COLLECTIBLE</span><h3 id="dialog-title"></h3><p id="dialog-description"></p></div><button class="close" type="button" aria-label="Close dialog">×</button></div>
+  <div class="dialog-price" id="dialog-price"></div><div class="dialog-note" id="dialog-note">Price shown in GRAM.</div>
+  <div class="dialog-actions" id="dialog-actions"></div>
+ </div>
+</dialog>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<nav class="mobile-dock" aria-label="Market categories">
+ <button class="active" data-category="gift" type="button"><span class="dock-icon"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 10h16v10H4zM3 7h18v3H3zM12 7v13M12 7H8.4a2.4 2.4 0 1 1 2.2-3.3L12 7Zm0 0h3.6a2.4 2.4 0 1 0-2.2-3.3L12 7Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"/></svg></span><span>Gifts</span></button>
+ <button data-category="username" type="button"><span class="dock-icon">@</span><span>Usernames</span></button>
+ <button data-category="number" type="button"><span class="dock-icon">+888</span><span>Numbers</span></button>
+</nav>
+<script>
+(function(){
+ const API_MODE = true;
+ const tg = window.Telegram && window.Telegram.WebApp;
+ if(tg){tg.ready();tg.expand();if(tg.setHeaderColor)tg.setHeaderColor('#080b09');if(tg.setBackgroundColor)tg.setBackgroundColor('#080b09');}
+ const $=function(s){return document.querySelector(s);};
+ const catalog=$('#catalog'),moreWrap=$('#load-more'),moreButton=moreWrap.querySelector('button');
+ const searchInput=$('#search'),sortInput=$('#sort'),collectionFilter=$('#collection-filter');
+ const dialog=$('#item-dialog'),toast=$('#toast'),state={category:'gift',collection:'',query:'',sort:'featured',page:1,limit:24,total:0,items:[],all:[],collections:[],busy:false};
+ const copy = {gift:{title:'Gifts',subtitle:'Telegram collectibles, ready to discover.',search:'Search gifts or collections…'},username:{title:'Usernames',subtitle:'Distinctive Telegram names, priced in GRAM.',search:'Search usernames…'},number:{title:'+888 Numbers',subtitle:'Collectible Telegram numbers, priced in GRAM.',search:'Search +888 numbers…'}};
+ let toastTimer=null;
+ const esc=function(value){const n=document.createElement('span');n.textContent=String(value==null?'':value);return n.innerHTML;};
+ const attr=function(value){return esc(value).replaceAll('"','&quot;').replaceAll("'","&#39;");};
+ const grams=function(value){const p=String(value==null?'0':value).split('.');let whole=p[0]||'0';let grouped='';while(whole.length>3){grouped=','+whole.slice(-3)+grouped;whole=whole.slice(0,-3);}grouped=whole+grouped;const fraction=(p[1]||'').replace(/0+$/,'');return grouped+(fraction?'.'+fraction:'')+' <small>GRAM</small>';};
+ const titleCase=function(value){return String(value||'').replace(/([a-z0-9])([A-Z])/g,'$1 $2').replace(/([A-Z])([A-Z][a-z])/g,'$1 $2');};
+ const icons={NekoHelmet:'🐱',DeskCalendar:'🗓️',SkyStilettos:'👠',KhabibsPapakha:'🧢',InputKey:'⌨️',SakuraFlower:'🌸',SleighBell:'🔔',LovePotion:'💗',SwagBag:'👜',PoolFloat:'🛟',CandyCane:'🍭',TimelessBook:'📚',SnowGlobe:'❄️',LunarSnake:'🐍',JackInTheBox:'🎁',FlyingBroom:'🧹',UFCStrike:'🥊',GingerCookie:'🍪',BDayCandle:'🕯️',HypnoLollipop:'🍬',InstantRamen:'🍜',SnakeBox:'🐍',EternalCandle:'🕯️',PartySparkler:'🎇',LightSword:'⚔️',MoneyPot:'💰',MoonPendant:'🌙',StellarRocket:'🚀',XmasStocking:'🧦',BunnyMuffin:'🧁',JingleBells:'🔔',HangingStar:'⭐',BigYear:'🎉',FaithAmulet:'📿',EasterEgg:'🥚',JoyfulBundle:'🎁',SnoopDogg:'🐶',CookieHeart:'💝',StarNotepad:'📓',SnoopCigar:'🚬',Icecream:'🍦',PetSnake:'🐍',LibertyFigure:'🗽',VictoryMedal:'🏅',PrettyPosy:'🌷',JesterHat:'🎭',MoodPack:'🎨',LolPop:'🍭',ViceCream:'🍨',HomemadeCake:'🍰',MousseCake:'🍰',FreshSocks:'🧦',CloverPin:'🍀',ChillFlame:'🔥',WhipCupcake:'🧁',HappyBrownie:'🍫'};
+ const palette=[['#3a542c','#152018'],['#4c302b','#1d1717'],['#25394a','#131c21'],['#413546','#1b1820'],['#4c4227','#211e16'],['#2b443f','#141d1a']];
+ function iconFor(item){return icons[item.collection]||'✦';}
+ function fallbackColors(item){let x=0;const s=String(item.collection||item.title||'');for(let i=0;i<s.length;i++)x=(x+s.charCodeAt(i)*i)%palette.length;return palette[x];}
+ function toastMessage(message){toast.textContent=message;toast.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(function(){toast.classList.remove('show');},2600);if(tg&&tg.showToast)tg.showToast(message);}
+ function safeLink(url){return /^https:\/\/t\.me\/nft\/[A-Za-z0-9_-]+$/i.test(String(url||''))?String(url):'';}
+ function userLink(item){const name=String(item.title||'').replace(/^@/,'');return /^[A-Za-z0-9_]{5,32}$/.test(name)?'https://t.me/'+name:'';}
+ function renderAccount(){
+  const user=tg&&tg.initDataUnsafe&&tg.initDataUnsafe.user;
+  if(user){$('#account-label').textContent=user.username?'@'+user.username:'TELEGRAM CONNECTED';$('#telegram-button').textContent='Connected';}
+ }
+ function setCategory(category){
+  if(!copy[category])return;
+  state.category=category;state.collection='';state.page=1;state.items=[];
+  document.querySelectorAll('[data-category]').forEach(function(b){b.classList.toggle('active',b.dataset.category===category);});
+  $('#category-title').textContent=copy[category].title;$('#category-subtitle').textContent=copy[category].subtitle;searchInput.placeholder=copy[category].search;
+  const gift=category==='gift';$('#collection-filter').hidden=!gift;$('#sidebar').hidden=!gift;$('#mobile-collections').hidden=!gift;
+  renderCatalog(true);
+ }
+ function buildGiftCard(item){
+  const colors=fallbackColors(item),image=safeLink(item.item_url)?String(item.image_url||''):'',thumb=image&&/^https:\/\//i.test(image)?'<img src="'+attr(image)+'" alt="" loading="lazy" referrerpolicy="no-referrer">':'';
+  return '<article class="gift-card" tabindex="0" role="button" data-id="'+attr(item.id)+'"><div class="gift-art" style="--art-a:'+colors[0]+';--art-b:'+colors[1]+'">'+thumb+(thumb?'':'<span class="gift-glyph">'+esc(iconFor(item))+'</span>')+'<div class="art-top"><span class="pill green">TELEGRAM GIFT</span><span class="open-icon"><svg viewBox="0 0 24 24" fill="none"><path d="M7 17 17 7M8 7h9v9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span></div><div class="art-bottom"><span class="pill">'+esc(String(item.collection||'COLLECTIBLE').replace(/([a-z0-9])([A-Z])/g,'$1 $2').toUpperCase())+'</span><span class="pill">#'+esc(String(item.title||'').split('#').pop())+'</span></div></div><div class="card-info"><div class="card-meta"><span class="collection-name">'+esc(titleCase(item.collection))+'</span><span>COLLECTIBLE</span></div><div class="card-title">'+esc(item.title)+'</div><div class="card-bottom"><div class="card-price">'+grams(item.price_grams)+'</div><span class="card-arrow">↗</span></div></div></article>';
+ }
+ function buildListing(item){
+  const isUser=state.category==='username',link=isUser?userLink(item):'';
+  return '<article class="listing-row" tabindex="0" role="button" data-id="'+attr(item.id)+'"><div class="listing-name"><strong>'+esc(item.title)+'</strong><small>'+(link?'t.me/'+esc(String(item.title).replace(/^@/,'')):(isUser?'TELEGRAM USERNAME':'COLLECTIBLE NUMBER'))+'</small></div><div class="list-price">'+grams(item.price_grams)+'</div><div class="row-arrow">›</div></article>';
+ }
+ function renderItems(items,append){
+  if(!append){
+   if(!items.length){catalog.innerHTML='<div class="empty">No listings match your search.</div>';return;}
+   if(state.category==='gift'){
+    catalog.innerHTML='<div class="gift-grid" id="gift-grid"></div>';
+   }else{
+    catalog.innerHTML='<div class="listing-table"><div class="list-head"><span>'+ (state.category==='username'?'USERNAME':'COLLECTIBLE NUMBER') +'</span><span>PRICE IN GRAM</span><span></span></div><div id="listing-rows"></div></div>';
+   }
+  }
+  const root=state.category==='gift'?$('#gift-grid'):$('#listing-rows');
+  if(!root)return;
+  root.insertAdjacentHTML('beforeend',items.map(state.category==='gift'?buildGiftCard:buildListing).join(''));
+ }
+ function renderCollections(collections){
+  state.collections=collections||[];
+  const allCount=state.total||state.all.length;
+  const entries=[{collection:'',item_count:allCount}].concat(state.collections);
+  const markup=entries.map(function(x){const label=x.collection?titleCase(x.collection):'All gifts';return '<button type="button" data-collection="'+attr(x.collection||'')+'" class="'+(state.collection===(x.collection||'')?'selected':'')+'"><span>'+esc(label)+'</span><small>'+Number(x.item_count||0)+'</small></button>';}).join('');
+  $('#collection-list').innerHTML=markup;
+  $('#mobile-collections').innerHTML=entries.map(function(x){return '<button type="button" data-collection="'+attr(x.collection||'')+'" class="'+(state.collection===(x.collection||'')?'selected':'')+'">'+esc(x.collection?titleCase(x.collection):'All gifts')+'</button>';}).join('');
+  document.querySelectorAll('[data-collection]').forEach(function(button){button.onclick=function(){state.collection=button.dataset.collection||'';state.page=1;renderCatalog(true);};});
+  collectionFilter.innerHTML='<option value="">All collections</option>'+state.collections.map(function(x){return '<option value="'+attr(x.collection)+'">'+esc(titleCase(x.collection))+' ('+Number(x.item_count||0)+')</option>';}).join('');
+  collectionFilter.value=state.collection;
+ }
+ function filteredStatic(){
+  let rows=state.all.filter(function(x){return x.category===state.category;});
+  if(state.collection)rows=rows.filter(function(x){return x.collection===state.collection;});
+  const query=state.query.toLocaleLowerCase('en');
+  if(query)rows=rows.filter(function(x){return (String(x.title)+' '+String(x.collection||'')+' '+String(x.item_url||'')).toLocaleLowerCase('en').includes(query);});
+  if(state.sort==='price_asc')rows.sort(function(a,b){return Number(a.price_grams)-Number(b.price_grams);});
+  else if(state.sort==='price_desc')rows.sort(function(a,b){return Number(b.price_grams)-Number(a.price_grams);});
+  else if(state.sort==='featured'&&state.category==='gift')rows.sort(function(a,b){return Number(Boolean(b.image_url))-Number(Boolean(a.image_url))||Number(String(b.id).replace(/\D/g,''))-Number(String(a.id).replace(/\D/g,''));});
+  else rows.sort(function(a,b){return Number(String(b.id).replace(/\D/g,''))-Number(String(a.id).replace(/\D/g,''));});
+  return rows;
+ }
+ async function loadApi(reset){
+  if(!tg||!tg.initData){catalog.innerHTML='<div class="empty">Open Quest Market inside Telegram to browse the live catalog.</div>';return;}
+  const params=new URLSearchParams({category:state.category,page:String(state.page),limit:String(state.limit),sort:state.sort,search:state.query,collection:state.collection});
+  const response=await fetch('/api/catalog?'+params.toString(),{headers:{Authorization:'tma '+tg.initData}});
+  if(!response.ok)throw new Error(response.status===401?'Open Quest Market inside Telegram to continue.':'Could not load listings.');
+  const data=await response.json();state.total=data.total;state.items=reset?data.items:state.items.concat(data.items);renderCollections(data.collections||[]);renderItems(data.items,!reset);
+ }
+ async function renderCatalog(reset){
+  if(state.busy)return;
+  if(reset){state.page=1;state.items=[];catalog.innerHTML='<div class="empty">Loading listings…</div>';}
+  state.busy=true;moreButton.disabled=true;
+  try{
+   if(API_MODE){await loadApi(reset);}
+   else{
+    if(!state.all.length){const response=await fetch('./catalog.json',{cache:'no-store'});if(!response.ok)throw new Error('Could not load the Quest Market catalog.');const data=await response.json();state.all=Array.isArray(data.items)?data.items:[];}
+    const rows=filteredStatic();state.total=rows.length;
+    const pageRows=rows.slice((state.page-1)*state.limit,state.page*state.limit);
+    state.items=reset?pageRows:state.items.concat(pageRows);
+    const giftCollections=Array.from(new Set(state.all.filter(function(x){return x.category==='gift';}).map(function(x){return x.collection;}))).sort().map(function(name){return {collection:name,item_count:state.all.filter(function(x){return x.category==='gift'&&x.collection===name;}).length};});
+    renderCollections(giftCollections);renderItems(pageRows,!reset);
+   }
+   const totalForCategory=API_MODE?state.total:state.all.filter(function(x){return x.category===state.category;}).length;
+   $('#visible-count').textContent=String(state.total);$('#count-label').textContent=state.total===1?'item':'items';
+   $('#total-stat').textContent=String(totalForCategory);$('#stat-label').textContent=state.category==='gift'?'collectible gifts':state.category==='username'?'usernames':'+888 numbers';
+   moreWrap.hidden=state.items.length>=state.total;
+   moreButton.textContent='Load more · '+Math.max(0,state.total-state.items.length);
+  }catch(error){catalog.innerHTML='<div class="empty">'+esc(error.message||'Could not load listings.')+'</div>';moreWrap.hidden=true;}
+  finally{state.busy=false;moreButton.disabled=false;}
+ }
+ function itemById(id){return state.items.find(function(x){return String(x.id)===String(id);})||state.all.find(function(x){return String(x.id)===String(id);});}
+ function openItem(item){
+  const isGift=item.category==='gift',color=fallbackColors(item),art=$('#dialog-art'),img=isGift&&item.image_url&&/^https:\/\//i.test(item.image_url)?'<img src="'+attr(item.image_url)+'" alt="" referrerpolicy="no-referrer">':'';
+  art.style.background='linear-gradient(145deg,'+color[0]+','+color[1]+')';art.innerHTML=img+(img?'':'<span class="gift-glyph">'+esc(isGift?iconFor(item):item.category==='number'?'✳':'@')+'</span>')+'<span class="pill nft-id">'+(isGift?'TELEGRAM NFT':item.category==='number'?'COLLECTIBLE NUMBER':'USERNAME')+'</span>';
+  $('#dialog-title').textContent=item.title;$('#dialog-collection').textContent=isGift?titleCase(item.collection).toUpperCase():item.category==='number'?'TELEGRAM NUMBER':'TELEGRAM USERNAME';
+  $('#dialog-description').textContent=isGift?'Telegram collectible · Unique gift link':item.category==='number'?'Collectible +888 number':'Telegram username';
+  $('#dialog-price').innerHTML=grams(item.price_grams);$('#dialog-note').textContent='All prices are listed in GRAM.';
+  const actions=$('#dialog-actions'),nft=safeLink(item.item_url);
+  if(isGift&&nft){
+   const botUrl='https://t.me/quest_mkt_bot?text='+encodeURIComponent('.buy '+nft+' '+String(item.price_grams)+' grams');
+   actions.innerHTML='<a class="action primary" href="'+attr(botUrl)+'" id="make-offer">Make offer in Telegram ↗</a><a class="action" href="'+attr(nft)+'" target="_blank" rel="noopener">View collectible ↗</a>';
+  }else{
+   const link=item.category==='username'?userLink(item):'';
+   actions.innerHTML=(link?'<a class="action primary" href="'+attr(link)+'" target="_blank" rel="noopener">Open username ↗</a>':'<button class="action primary" type="button" id="copy-listing">Copy listing</button>')+'<button class="action" type="button" id="close-action">Close</button>';
+   const copyButton=$('#copy-listing');if(copyButton)copyButton.onclick=function(){const text=item.title+' · '+String(item.price_grams)+' GRAM';if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(text).then(function(){toastMessage('Listing copied.');}).catch(function(){toastMessage(text);});else toastMessage(text);};
+   const closeButton=$('#close-action');if(closeButton)closeButton.onclick=function(){dialog.close();};
+  }
+  dialog.showModal();
+ }
+ function activateItem(event){
+  const row=event.target.closest('[data-id]');if(!row)return;
+  const item=itemById(row.dataset.id);if(item)openItem(item);
+ }
+ function openBot(){
+  const url='https://t.me/quest_mkt_bot';
+  if(tg&&tg.openTelegramLink)tg.openTelegramLink(url);else window.open(url,'_blank','noopener');
+ }
+ document.querySelectorAll('[data-category]').forEach(function(button){button.addEventListener('click',function(){setCategory(button.dataset.category);});});
+ searchInput.addEventListener('input',function(){clearTimeout(window.qmSearchTimer);window.qmSearchTimer=setTimeout(function(){state.query=searchInput.value.trim();renderCatalog(true);},180);});
+ sortInput.addEventListener('change',function(){state.sort=sortInput.value;renderCatalog(true);});
+ collectionFilter.addEventListener('change',function(){state.collection=collectionFilter.value;renderCatalog(true);});
+ moreButton.addEventListener('click',function(){state.page+=1;renderCatalog(false);});
+ catalog.addEventListener('click',activateItem);
+ catalog.addEventListener('keydown',function(event){if(event.key==='Enter'||event.key===' '){if(event.target.matches('[data-id]')){event.preventDefault();activateItem(event);}}});
+ $('.close').addEventListener('click',function(){dialog.close();});
+ $('#telegram-button').addEventListener('click',openBot);
+ $('#item-dialog').addEventListener('click',function(event){if(event.target===dialog)dialog.close();});
+ renderAccount();renderCatalog(true);
+})();
+</script>
+</body>
+</html>
