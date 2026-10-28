@@ -21,7 +21,7 @@ class MarketStore:
         self._load_static_catalog()
 
     def _load_static_catalog(self) -> None:
-        catalog_path = Path(__file__).parent.parent / "netlify-site" / "catalog.json"
+        catalog_path = Path(__file__).parent.parent / "catalog.json"
         if not catalog_path.is_file():
             return
         try:
