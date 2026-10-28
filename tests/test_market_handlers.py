@@ -22,11 +22,28 @@ class OfferCurrencyEmojiTests(unittest.TestCase):
         ):
             with self.subTest(currency=currency):
                 offer = {**self.offer, "currency": currency}
-                text = _offer_text(offer, emoji_alts={emoji_id: sticker_emoji})
+                content = _offer_text(offer, emoji_alts={emoji_id: sticker_emoji}).as_kwargs()
 
-                self.assertIn(f'<tg-emoji emoji-id="{emoji_id}">{sticker_emoji}</tg-emoji>', text)
-                self.assertNotIn("GRAM", text)
-                self.assertNotIn("STARS", text)
+                self.assertIn(sticker_emoji, content["text"])
+                self.assertNotIn("GRAM", content["text"])
+                self.assertNotIn("STARS", content["text"])
+                self.assertTrue(
+                    any(
+                        entity.type == "custom_emoji"
+                        and entity.custom_emoji_id == emoji_id
+                        for entity in content["entities"]
+                    )
+                )
+                inline_result = _inline_offer_result(
+                    offer, "abcdef123456", {emoji_id: sticker_emoji}
+                )
+                self.assertTrue(
+                    any(
+                        entity.type == "custom_emoji"
+                        and entity.custom_emoji_id == emoji_id
+                        for entity in inline_result.input_message_content.entities or []
+                    )
+                )
 
     def test_inline_offer_has_standard_emoji_fallback(self) -> None:
         for currency, fallback in (("GRAM", "💎"), ("STARS", "⭐")):
@@ -37,7 +54,12 @@ class OfferCurrencyEmojiTests(unittest.TestCase):
                 )
 
                 self.assertIn(f"500 {fallback}", result.input_message_content.message_text)
-                self.assertNotIn("<tg-emoji", result.input_message_content.message_text)
+                self.assertFalse(
+                    any(
+                        entity.type == "custom_emoji"
+                        for entity in result.input_message_content.entities or []
+                    )
+                )
 
 
 class CurrencyEmojiMetadataTests(unittest.IsolatedAsyncioTestCase):

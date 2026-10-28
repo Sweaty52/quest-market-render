@@ -23,6 +23,7 @@ from aiogram.types import (
     Message,
     WebAppInfo,
 )
+from aiogram.utils.formatting import Bold, CustomEmoji, Text, TextLink
 
 from .config import MarketSettings
 from .market_store import MarketStore
@@ -116,28 +117,49 @@ def _offer_text(
     emoji_alts: dict[str, str] | None = None,
     *,
     custom_emoji: bool = True,
-) -> str:
+) -> Text:
     current_status = status or offer["status"]
     price = _format_price(offer["price"])
-    currency = _currency_emoji(offer.get("currency", "GRAM"), emoji_alts or {}, custom=custom_emoji)
-    link = escape(str(offer["nft_url"]), quote=True)
-    buyer_label = escape(str(offer.get("buyer_label") or "A user"), quote=True)
-    gift_label = escape(_gift_label(str(offer["nft_url"])), quote=True)
+    currency_key = "STARS" if offer.get("currency") == "STARS" else "GRAM"
+    custom_emoji_id = _CURRENCY_CUSTOM_EMOJI_IDS[currency_key]
+    emoji = emoji_alts.get(custom_emoji_id, _CURRENCY_FALLBACK_EMOJIS[currency_key]) if emoji_alts else _CURRENCY_FALLBACK_EMOJIS[currency_key]
+    currency = (
+        CustomEmoji(emoji, custom_emoji_id=custom_emoji_id)
+        if custom_emoji
+        else emoji
+    )
+    buyer_label = str(offer.get("buyer_label") or "A user")
+    gift_label = _gift_label(str(offer["nft_url"]))
     expires_at = offer.get("expires_at")
     seconds_left = max(1, int((expires_at - datetime.now(timezone.utc)).total_seconds())) if expires_at else 6 * 3600
     hours_left = max(1, (seconds_left + 3599) // 3600)
-    gift_link = f'<a href="{link}">{gift_label}</a>'
+    first = Bold(f"User {buyer_label} offers you")
 
-    first = f"<b>User {buyer_label} offers you</b>"
-    pending = f"<b>{price} {currency}</b> for the gift {gift_link}.\n\nOffer expires in {hours_left} hour{'s' if hours_left != 1 else ''}."
-    statuses = {
-        "accepted": "\n<b>Offer accepted.</b> Transfer the gift to Quest Market (@questbankk), then tap “I've transferred”.",
-        "rejected": "\nThe seller declined this offer.",
-        "gift_sent": "\nThe seller marked the collectible as transferred. Quest Market will verify receipt.",
-    }
-
-    body = pending if current_status == "pending" else statuses.get(current_status, "")
-    return f"{first}\n{body}"
+    if current_status == "pending":
+        return Text(
+            first,
+            "\n",
+            Bold(price, " ", currency),
+            " for the gift ",
+            TextLink(gift_label, url=str(offer["nft_url"])),
+            ".\n\nOffer expires in ",
+            str(hours_left),
+            " hour",
+            "s" if hours_left != 1 else "",
+            ".",
+        )
+    if current_status == "accepted":
+        body = Text(
+            Bold("Offer accepted."),
+            " Transfer the gift to Quest Market (@questbankk), then tap “I've transferred”.",
+        )
+    elif current_status == "rejected":
+        body = Text("The seller declined this offer.")
+    elif current_status == "gift_sent":
+        body = Text("The seller marked the collectible as transferred. Quest Market will verify receipt.")
+    else:
+        body = Text()
+    return Text(first, "\n", body)
 
 
 def _pending_keyboard(offer_id: str) -> InlineKeyboardMarkup:
@@ -339,8 +361,9 @@ def _inline_offer_result(
         ),
         description="Send the offer with Accept and Decline buttons",
         input_message_content=InputTextMessageContent(
-            message_text=_offer_text(offer, emoji_alts=emoji_alts, custom_emoji=custom_emoji),
-            parse_mode="HTML",
+            **_offer_text(offer, emoji_alts=emoji_alts, custom_emoji=custom_emoji).as_kwargs(
+                text_key="message_text"
+            ),
             link_preview_options=LinkPreviewOptions(
                 is_disabled=False,
                 url=offer["nft_url"],
@@ -359,9 +382,8 @@ async def _edit_inline_message(query: CallbackQuery, offer: dict, settings: Mark
     try:
         await query.bot.edit_message_text(
             inline_message_id=query.inline_message_id,
-            text=_offer_text(offer, emoji_alts=emoji_alts),
+            **_offer_text(offer, emoji_alts=emoji_alts).as_kwargs(),
             reply_markup=_current_keyboard(offer, settings),
-            parse_mode="HTML",
             link_preview_options=LinkPreviewOptions(
                 is_disabled=False,
                 url=offer["nft_url"],
@@ -373,9 +395,8 @@ async def _edit_inline_message(query: CallbackQuery, offer: dict, settings: Mark
         log.warning("Telegram rejected custom emoji while editing offer; using standard emoji (%s)", exc)
         await query.bot.edit_message_text(
             inline_message_id=query.inline_message_id,
-            text=_offer_text(offer, emoji_alts=emoji_alts, custom_emoji=False),
+            **_offer_text(offer, emoji_alts=emoji_alts, custom_emoji=False).as_kwargs(),
             reply_markup=_current_keyboard(offer, settings),
-            parse_mode="HTML",
             link_preview_options=LinkPreviewOptions(
                 is_disabled=False,
                 url=offer["nft_url"],
