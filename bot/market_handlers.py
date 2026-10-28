@@ -148,14 +148,36 @@ async def start(message: Message, settings: MarketSettings) -> None:
         )
         await message.answer(text, parse_mode="HTML")
     elif settings.public_webapp_url:
+        name = escape(message.from_user.first_name if message.from_user else "there", quote=True)
+        text = (
+            f"Welcome, {name} 👋\n\n"
+            "<b>QUEST MARKET</b>\n"
+            "Discover Telegram collectibles in one place.\n\n"
+            "🎁 Unique gifts\n"
+            "✦ Rare usernames\n"
+            "＋ Collectible +888 numbers\n\n"
+            "Browse the catalog and open any listing to see its details."
+        )
         await message.answer(
-            "Open Quest Market below.",
+            text,
+            parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                InlineKeyboardButton(text="Open Quest Market", web_app=WebAppInfo(url=settings.public_webapp_url))
+                InlineKeyboardButton(text="Explore the market", web_app=WebAppInfo(url=settings.public_webapp_url))
+            ], [
+                InlineKeyboardButton(text="How it works", callback_data="market:how")
             ]]),
         )
     elif not has_inline_access:
         await message.answer("The marketplace link is not configured yet.")
+
+
+@router.callback_query(F.data == "market:how")
+async def market_how_it_works(callback: CallbackQuery) -> None:
+    await callback.answer(
+        "Browse gifts, usernames and +888 numbers. Prices are shown in GRAM. "
+        "Open a listing to view its Telegram page or start an offer.",
+        show_alert=True,
+    )
 
 
 @router.message(Command("help"))

@@ -97,10 +97,6 @@ async def api_offers(request: web.Request) -> web.Response:
 
 
 async def api_catalog(request: web.Request) -> web.Response:
-    settings: MarketSettings = request.app["settings"]
-    user = _telegram_user(_init_data(request), settings.market_bot_token)
-    if not user:
-        raise web.HTTPUnauthorized(text="Open Quest Market inside Telegram.")
     category = request.query.get("category", "username")
     if category not in {"username", "number", "gift"}:
         raise web.HTTPBadRequest(text="Unknown catalog category.")
@@ -136,11 +132,6 @@ async def api_catalog(request: web.Request) -> web.Response:
         "page": page,
         "limit": limit,
         "collections": collections,
-        "user": {
-            "id": user["id"],
-            "first_name": user.get("first_name", ""),
-            "username": user.get("username", ""),
-        },
     })
 
 

@@ -21,7 +21,10 @@ class MarketStore:
         self._load_static_catalog()
 
     def _load_static_catalog(self) -> None:
-        catalog_path = Path(__file__).parent.parent / "catalog.json"
+        root = Path(__file__).parent.parent
+        catalog_path = root / "catalog.json"
+        if not catalog_path.is_file():
+            catalog_path = root / "netlify-site" / "catalog.json"
         if not catalog_path.is_file():
             return
         try:
@@ -126,7 +129,7 @@ class MarketStore:
                 "collection": collection,
                 "item_url": url,
                 "image_url": "",
-                "price_grams": Decimal(500 + ((index * 137) % 5000)),
+                "price_grams": Decimal(3 + ((index - 1) * 37 % 198)),
                 "status": "for_sale",
             })
         return sum(item["category"] == "gift" for item in self._items)
