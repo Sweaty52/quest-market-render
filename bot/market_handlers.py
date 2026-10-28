@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-import logging
 import re
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from html import escape
 from urllib.parse import urlsplit
 
-from aiogram import Bot, F, Router
+from aiogram import F, Router
 from aiogram.enums import ChatType
-from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.types import (
     CallbackQuery,
@@ -23,22 +21,14 @@ from aiogram.types import (
     Message,
     WebAppInfo,
 )
-from aiogram.utils.formatting import Bold, CustomEmoji, Text, TextLink
 
 from .config import MarketSettings
 from .market_store import MarketStore
 
 router = Router(name="quest-market")
-log = logging.getLogger(__name__)
 _PRICE_RE = re.compile(r"^(?:0|[1-9]\d{0,20})(?:[.,]\d{1,9})?$")
 _STARS_PRICE_RE = re.compile(r"^[1-9]\d{0,20}$")
 _OFFER_ID_RE = re.compile(r"^[0-9a-f]{12}$")
-_CURRENCY_CUSTOM_EMOJI_IDS = {
-    "GRAM": "5264766603584641330",
-    "STARS": "5220029283631672529",
-}
-_CURRENCY_FALLBACK_EMOJIS = {"GRAM": "💎", "STARS": "⭐"}
-_CURRENCY_EMOJI_ALTS: dict[str, str] | None = None
 _BUY_RE = re.compile(
     r"^(?:\.buy|/buy)\s+(?:eng\s+)?(?:(gram|grams|star|stars)\s+)?(\S+)\s+(\S+)(?:\s+(gram|grams|star|stars))?\s*$",
     re.IGNORECASE,
@@ -50,40 +40,8 @@ def _format_price(value: Decimal | str) -> str:
     return format(price, ",f")
 
 
-async def _currency_emoji_alts(bot: Bot) -> dict[str, str]:
-    global _CURRENCY_EMOJI_ALTS
-    if _CURRENCY_EMOJI_ALTS is not None:
-        return _CURRENCY_EMOJI_ALTS
-    try:
-        stickers = await bot.get_custom_emoji_stickers(
-            custom_emoji_ids=list(_CURRENCY_CUSTOM_EMOJI_IDS.values())
-        )
-    except TelegramAPIError as exc:
-        log.warning("Could not retrieve currency custom emoji metadata (%s)", type(exc).__name__)
-        return {}
-    emoji_alts = {
-        str(sticker.custom_emoji_id): sticker.emoji
-        for sticker in stickers
-        if sticker.custom_emoji_id and sticker.emoji
-    }
-    missing_ids = set(_CURRENCY_CUSTOM_EMOJI_IDS.values()) - emoji_alts.keys()
-    if missing_ids:
-        log.warning("Telegram returned no metadata for currency custom emoji IDs: %s", ", ".join(sorted(missing_ids)))
-        return emoji_alts
-    _CURRENCY_EMOJI_ALTS = emoji_alts
-    return emoji_alts
-
-
-def _currency_emoji(
-    currency: str, emoji_alts: dict[str, str], *, custom: bool = True
-) -> str:
-    key = "STARS" if currency == "STARS" else "GRAM"
-    fallback = _CURRENCY_FALLBACK_EMOJIS[key]
-    if not custom:
-        return fallback
-    custom_emoji_id = _CURRENCY_CUSTOM_EMOJI_IDS[key]
-    alt = escape(emoji_alts.get(custom_emoji_id, fallback))
-    return f'<tg-emoji emoji-id="{custom_emoji_id}">{alt}</tg-emoji>'
+def _currency_label(currency: str) -> str:
+    return "⭐ Stars" if currency == "STARS" else "GRAM"
 
 
 def _valid_nft_url(value: str) -> bool:
@@ -114,52 +72,28 @@ def _gift_label(nft_url: str) -> str:
 def _offer_text(
     offer: dict,
     status: str | None = None,
-    emoji_alts: dict[str, str] | None = None,
-    *,
-    custom_emoji: bool = True,
-) -> Text:
+) -> str:
     current_status = status or offer["status"]
     price = _format_price(offer["price"])
-    currency_key = "STARS" if offer.get("currency") == "STARS" else "GRAM"
-    custom_emoji_id = _CURRENCY_CUSTOM_EMOJI_IDS[currency_key]
-    emoji = emoji_alts.get(custom_emoji_id, _CURRENCY_FALLBACK_EMOJIS[currency_key]) if emoji_alts else _CURRENCY_FALLBACK_EMOJIS[currency_key]
-    currency = (
-        CustomEmoji(emoji, custom_emoji_id=custom_emoji_id)
-        if custom_emoji
-        else emoji
-    )
-    buyer_label = str(offer.get("buyer_label") or "A user")
-    gift_label = _gift_label(str(offer["nft_url"]))
+    currency = _currency_label(offer.get("currency", "GRAM"))
+    link = escape(str(offer["nft_url"]), quote=True)
+    buyer_label = escape(str(offer.get("buyer_label") or "A user"), quote=True)
+    gift_label = escape(_gift_label(str(offer["nft_url"])), quote=True)
     expires_at = offer.get("expires_at")
     seconds_left = max(1, int((expires_at - datetime.now(timezone.utc)).total_seconds())) if expires_at else 6 * 3600
     hours_left = max(1, (seconds_left + 3599) // 3600)
-    first = Bold(f"User {buyer_label} offers you")
+    gift_link = f'<a href="{link}">{gift_label}</a>'
 
-    if current_status == "pending":
-        return Text(
-            first,
-            "\n",
-            Bold(price, " ", currency),
-            " for the gift ",
-            TextLink(gift_label, url=str(offer["nft_url"])),
-            ".\n\nOffer expires in ",
-            str(hours_left),
-            " hour",
-            "s" if hours_left != 1 else "",
-            ".",
-        )
-    if current_status == "accepted":
-        body = Text(
-            Bold("Offer accepted."),
-            " Transfer the gift to Quest Market (@questbankk), then tap “I've transferred”.",
-        )
-    elif current_status == "rejected":
-        body = Text("The seller declined this offer.")
-    elif current_status == "gift_sent":
-        body = Text("The seller marked the collectible as transferred. Quest Market will verify receipt.")
-    else:
-        body = Text()
-    return Text(first, "\n", body)
+    first = f"<b>User {buyer_label} offers you</b>"
+    pending = f"<b>{price} {currency}</b> for the gift {gift_link}.\n\nOffer expires in {hours_left} hour{'s' if hours_left != 1 else ''}."
+    statuses = {
+        "accepted": "\n<b>Offer accepted.</b> Transfer the gift to Quest Market (@questbankk), then tap “I've transferred”.",
+        "rejected": "\nThe seller declined this offer.",
+        "gift_sent": "\nThe seller marked the collectible as transferred. Quest Market will verify receipt.",
+    }
+
+    body = pending if current_status == "pending" else statuses.get(current_status, "")
+    return f"{first}\n{body}"
 
 
 def _pending_keyboard(offer_id: str) -> InlineKeyboardMarkup:
@@ -334,36 +268,24 @@ async def inline_offer(query: InlineQuery, store: MarketStore, settings: MarketS
     if not offer or offer["buyer_id"] != query.from_user.id or offer["status"] != "pending":
         await query.answer([], cache_time=0, is_personal=True)
         return
-    emoji_alts = await _currency_emoji_alts(query.bot)
-    result = _inline_offer_result(offer, offer_id, emoji_alts, custom_emoji=True)
-    try:
-        await query.answer([result], cache_time=0, is_personal=True)
-    except TelegramBadRequest as exc:
-        log.warning("Telegram rejected custom emoji in inline offer; using standard emoji (%s)", exc)
-        await query.answer(
-            [_inline_offer_result(offer, offer_id, emoji_alts, custom_emoji=False)],
-            cache_time=0,
-            is_personal=True,
-        )
+    await query.answer(
+        [_inline_offer_result(offer, offer_id)],
+        cache_time=0,
+        is_personal=True,
+    )
 
 
 def _inline_offer_result(
     offer: dict,
     offer_id: str,
-    emoji_alts: dict[str, str],
-    *,
-    custom_emoji: bool = True,
 ) -> InlineQueryResultArticle:
     return InlineQueryResultArticle(
         id=offer_id,
-        title="Purchase offer · " + _format_price(offer["price"]) + " " + _currency_emoji(
-            offer.get("currency", "GRAM"), emoji_alts, custom=False
-        ),
+        title="Purchase offer · " + _format_price(offer["price"]) + " " + _currency_label(offer.get("currency", "GRAM")),
         description="Send the offer with Accept and Decline buttons",
         input_message_content=InputTextMessageContent(
-            **_offer_text(offer, emoji_alts=emoji_alts, custom_emoji=custom_emoji).as_kwargs(
-                text_key="message_text"
-            ),
+            message_text=_offer_text(offer),
+            parse_mode="HTML",
             link_preview_options=LinkPreviewOptions(
                 is_disabled=False,
                 url=offer["nft_url"],
@@ -378,32 +300,18 @@ def _inline_offer_result(
 async def _edit_inline_message(query: CallbackQuery, offer: dict, settings: MarketSettings) -> None:
     if not query.inline_message_id:
         return
-    emoji_alts = await _currency_emoji_alts(query.bot)
-    try:
-        await query.bot.edit_message_text(
-            inline_message_id=query.inline_message_id,
-            **_offer_text(offer, emoji_alts=emoji_alts).as_kwargs(),
-            reply_markup=_current_keyboard(offer, settings),
-            link_preview_options=LinkPreviewOptions(
-                is_disabled=False,
-                url=offer["nft_url"],
-                prefer_large_media=True,
-                show_above_text=True,
-            ),
-        )
-    except TelegramBadRequest as exc:
-        log.warning("Telegram rejected custom emoji while editing offer; using standard emoji (%s)", exc)
-        await query.bot.edit_message_text(
-            inline_message_id=query.inline_message_id,
-            **_offer_text(offer, emoji_alts=emoji_alts, custom_emoji=False).as_kwargs(),
-            reply_markup=_current_keyboard(offer, settings),
-            link_preview_options=LinkPreviewOptions(
-                is_disabled=False,
-                url=offer["nft_url"],
-                prefer_large_media=True,
-                show_above_text=True,
-            ),
-        )
+    await query.bot.edit_message_text(
+        inline_message_id=query.inline_message_id,
+        text=_offer_text(offer),
+        reply_markup=_current_keyboard(offer, settings),
+        parse_mode="HTML",
+        link_preview_options=LinkPreviewOptions(
+            is_disabled=False,
+            url=offer["nft_url"],
+            prefer_large_media=True,
+            show_above_text=True,
+        ),
+    )
 
 
 @router.callback_query(F.data.startswith("qm:"))

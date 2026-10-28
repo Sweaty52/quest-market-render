@@ -1,12 +1,10 @@
 import unittest
 from decimal import Decimal
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
 
-from bot.market_handlers import _currency_emoji_alts, _inline_offer_result, _offer_text
+from bot.market_handlers import _inline_offer_result, _offer_text
 
 
-class OfferCurrencyEmojiTests(unittest.TestCase):
+class OfferCurrencyLabelTests(unittest.TestCase):
     def setUp(self) -> None:
         self.offer = {
             "status": "pending",
@@ -15,75 +13,24 @@ class OfferCurrencyEmojiTests(unittest.TestCase):
             "buyer_label": "@buyer",
         }
 
-    def test_offer_uses_custom_emoji_without_currency_names(self) -> None:
-        for currency, emoji_id, sticker_emoji in (
-            ("GRAM", "5264766603584641330", "🪙"),
-            ("STARS", "5220029283631672529", "🌟"),
-        ):
+    def test_offer_text_uses_original_currency_labels(self) -> None:
+        for currency, label in (("GRAM", "GRAM"), ("STARS", "⭐ Stars")):
             with self.subTest(currency=currency):
-                offer = {**self.offer, "currency": currency}
-                content = _offer_text(offer, emoji_alts={emoji_id: sticker_emoji}).as_kwargs()
+                text = _offer_text({**self.offer, "currency": currency})
 
-                self.assertIn(sticker_emoji, content["text"])
-                self.assertNotIn("GRAM", content["text"])
-                self.assertNotIn("STARS", content["text"])
-                self.assertTrue(
-                    any(
-                        entity.type == "custom_emoji"
-                        and entity.custom_emoji_id == emoji_id
-                        for entity in content["entities"]
-                    )
-                )
-                inline_result = _inline_offer_result(
-                    offer, "abcdef123456", {emoji_id: sticker_emoji}
-                )
-                self.assertTrue(
-                    any(
-                        entity.type == "custom_emoji"
-                        and entity.custom_emoji_id == emoji_id
-                        for entity in inline_result.input_message_content.entities or []
-                    )
-                )
+                self.assertIn(f"500 {label}", text)
+                self.assertNotIn("<tg-emoji", text)
 
-    def test_inline_offer_has_standard_emoji_fallback(self) -> None:
-        for currency, fallback in (("GRAM", "💎"), ("STARS", "⭐")):
+    def test_inline_offer_title_and_message_use_original_currency_labels(self) -> None:
+        for currency, label in (("GRAM", "GRAM"), ("STARS", "⭐ Stars")):
             with self.subTest(currency=currency):
-                offer = {**self.offer, "currency": currency}
                 result = _inline_offer_result(
-                    offer, "abcdef123456", {}, custom_emoji=False
+                    {**self.offer, "currency": currency}, "abcdef123456"
                 )
 
-                self.assertIn(f"500 {fallback}", result.input_message_content.message_text)
-                self.assertFalse(
-                    any(
-                        entity.type == "custom_emoji"
-                        for entity in result.input_message_content.entities or []
-                    )
-                )
-
-
-class CurrencyEmojiMetadataTests(unittest.IsolatedAsyncioTestCase):
-    async def test_fetches_the_alt_emoji_for_each_custom_emoji_id(self) -> None:
-        expected = {
-            "5264766603584641330": "🪙",
-            "5220029283631672529": "🌟",
-        }
-        bot = SimpleNamespace(
-            get_custom_emoji_stickers=AsyncMock(
-                return_value=[
-                    SimpleNamespace(custom_emoji_id=emoji_id, emoji=emoji)
-                    for emoji_id, emoji in expected.items()
-                ]
-            )
-        )
-
-        with patch("bot.market_handlers._CURRENCY_EMOJI_ALTS", None):
-            emoji_alts = await _currency_emoji_alts(bot)
-
-        self.assertEqual(emoji_alts, expected)
-        bot.get_custom_emoji_stickers.assert_awaited_once_with(
-            custom_emoji_ids=list(expected)
-        )
+                self.assertIn(label, result.title)
+                self.assertIn(label, result.input_message_content.message_text)
+                self.assertEqual(result.input_message_content.parse_mode, "HTML")
 
 
 if __name__ == "__main__":
