@@ -36,7 +36,6 @@ async def main() -> None:
         dispatcher["bot_username"] = me.username or "quest_mkt_bot"
         await bot.set_my_commands([
             BotCommand(command="start", description="Open Quest Market"),
-            BotCommand(command="help", description="How to create and share an offer"),
             BotCommand(command="myid", description="Show your Telegram ID"),
         ])
         if settings.public_webapp_url:

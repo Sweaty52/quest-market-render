@@ -183,16 +183,6 @@ async def market_how_it_works(callback: CallbackQuery) -> None:
     )
 
 
-@router.message(Command("help"))
-async def help_command(message: Message, settings: MarketSettings) -> None:
-    await message.answer(
-        "Use <code>.buy https://t.me/nft/Collectible-123 12.5 grams</code> or "
-        "<code>.buy https://t.me/nft/Collectible-123 500 stars</code>. "
-        "Tap <b>Copy inline</b>, paste it in the target chat, then select the result.",
-        parse_mode="HTML",
-    )
-
-
 @router.message(F.text.startswith(".buy") | F.text.startswith("/buy"))
 async def create_buy_offer(
     message: Message,
