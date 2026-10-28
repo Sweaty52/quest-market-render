@@ -302,10 +302,10 @@ dialog::backdrop{background:#000b;backdrop-filter:blur(8px)}
   return rows;
  }
  async function loadApi(reset){
-  if(!tg||!tg.initData){catalog.innerHTML='<div class="empty">Open Quest Market inside Telegram to browse the live catalog.</div>';return;}
   const params=new URLSearchParams({category:state.category,page:String(state.page),limit:String(state.limit),sort:state.sort,search:state.query,collection:state.collection});
-  const response=await fetch('/api/catalog?'+params.toString(),{headers:{Authorization:'tma '+tg.initData}});
-  if(!response.ok)throw new Error(response.status===401?'Open Quest Market inside Telegram to continue.':'Could not load listings.');
+  const headers=tg&&tg.initData?{Authorization:'tma '+tg.initData}:{};
+  const response=await fetch('/api/catalog?'+params.toString(),{headers:headers});
+  if(!response.ok)throw new Error('Could not load listings.');
   const data=await response.json();state.total=data.total;state.items=reset?data.items:state.items.concat(data.items);renderCollections(data.collections||[]);renderItems(data.items,!reset);
  }
  async function renderCatalog(reset){
