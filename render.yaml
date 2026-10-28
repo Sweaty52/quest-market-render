@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: quest-market
+    runtime: python
+    plan: free
+    region: frankfurt
+    buildCommand: pip install -r requirements-market.txt
+    startCommand: python -m bot.market_main
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.11
+      - key: BOT_MODE
+        value: webhook
+      - key: MARKET_BOT_TOKEN
+        sync: false
+      - key: MARKET_ALLOWED_USER_IDS
+        sync: false
+      - key: MARKET_ACCOUNT_URL
+        value: tg://send_gift?to=questbankk
