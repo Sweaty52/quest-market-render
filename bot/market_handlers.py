@@ -7,9 +7,9 @@ from decimal import Decimal, InvalidOperation
 from html import escape
 from urllib.parse import urlsplit
 
-from aiogram import F, Router
+from aiogram import Bot, F, Router
 from aiogram.enums import ChatType
-from aiogram.exceptions import TelegramBadRequest
+from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.types import (
     CallbackQuery,
@@ -37,6 +37,7 @@ _CURRENCY_CUSTOM_EMOJI_IDS = {
     "STARS": "5220029283631672529",
 }
 _CURRENCY_FALLBACK_EMOJIS = {"GRAM": "💎", "STARS": "⭐"}
+_CURRENCY_EMOJI_ALTS: dict[str, str] | None = None
 _BUY_RE = re.compile(
     r"^(?:\.buy|/buy)\s+(?:eng\s+)?(?:(gram|grams|star|stars)\s+)?(\S+)\s+(\S+)(?:\s+(gram|grams|star|stars))?\s*$",
     re.IGNORECASE,
@@ -48,13 +49,38 @@ def _format_price(value: Decimal | str) -> str:
     return format(price, ",f")
 
 
-def _currency_emoji(currency: str, *, custom: bool = True) -> str:
+async def _currency_emoji_alts(bot: Bot) -> dict[str, str]:
+    global _CURRENCY_EMOJI_ALTS
+    if _CURRENCY_EMOJI_ALTS is not None:
+        return _CURRENCY_EMOJI_ALTS
+    try:
+        stickers = await bot.get_custom_emoji_stickers(
+            custom_emoji_ids=list(_CURRENCY_CUSTOM_EMOJI_IDS.values())
+        )
+    except TelegramAPIError as exc:
+        log.warning("Could not retrieve currency custom emoji metadata (%s)", type(exc).__name__)
+        return {}
+    _CURRENCY_EMOJI_ALTS = {
+        str(sticker.custom_emoji_id): sticker.emoji
+        for sticker in stickers
+        if sticker.custom_emoji_id and sticker.emoji
+    }
+    missing_ids = set(_CURRENCY_CUSTOM_EMOJI_IDS.values()) - _CURRENCY_EMOJI_ALTS.keys()
+    if missing_ids:
+        log.warning("Telegram returned no metadata for currency custom emoji IDs: %s", ", ".join(sorted(missing_ids)))
+    return _CURRENCY_EMOJI_ALTS
+
+
+def _currency_emoji(
+    currency: str, emoji_alts: dict[str, str], *, custom: bool = True
+) -> str:
     key = "STARS" if currency == "STARS" else "GRAM"
     fallback = _CURRENCY_FALLBACK_EMOJIS[key]
     if not custom:
         return fallback
     custom_emoji_id = _CURRENCY_CUSTOM_EMOJI_IDS[key]
-    return f'<tg-emoji emoji-id="{custom_emoji_id}">{fallback}</tg-emoji>'
+    alt = escape(emoji_alts.get(custom_emoji_id, fallback))
+    return f'<tg-emoji emoji-id="{custom_emoji_id}">{alt}</tg-emoji>'
 
 
 def _valid_nft_url(value: str) -> bool:
@@ -82,10 +108,16 @@ def _gift_label(nft_url: str) -> str:
     return f"{name} #{serial}"
 
 
-def _offer_text(offer: dict, status: str | None = None, *, custom_emoji: bool = True) -> str:
+def _offer_text(
+    offer: dict,
+    status: str | None = None,
+    emoji_alts: dict[str, str] | None = None,
+    *,
+    custom_emoji: bool = True,
+) -> str:
     current_status = status or offer["status"]
     price = _format_price(offer["price"])
-    currency = _currency_emoji(offer.get("currency", "GRAM"), custom=custom_emoji)
+    currency = _currency_emoji(offer.get("currency", "GRAM"), emoji_alts or {}, custom=custom_emoji)
     link = escape(str(offer["nft_url"]), quote=True)
     buyer_label = escape(str(offer.get("buyer_label") or "A user"), quote=True)
     gift_label = escape(_gift_label(str(offer["nft_url"])), quote=True)
@@ -278,29 +310,34 @@ async def inline_offer(query: InlineQuery, store: MarketStore, settings: MarketS
     if not offer or offer["buyer_id"] != query.from_user.id or offer["status"] != "pending":
         await query.answer([], cache_time=0, is_personal=True)
         return
-    result = _inline_offer_result(offer, offer_id, custom_emoji=True)
+    emoji_alts = await _currency_emoji_alts(query.bot)
+    result = _inline_offer_result(offer, offer_id, emoji_alts, custom_emoji=True)
     try:
         await query.answer([result], cache_time=0, is_personal=True)
     except TelegramBadRequest as exc:
         log.warning("Telegram rejected custom emoji in inline offer; using standard emoji (%s)", exc)
         await query.answer(
-            [_inline_offer_result(offer, offer_id, custom_emoji=False)],
+            [_inline_offer_result(offer, offer_id, emoji_alts, custom_emoji=False)],
             cache_time=0,
             is_personal=True,
         )
 
 
 def _inline_offer_result(
-    offer: dict, offer_id: str, *, custom_emoji: bool = True
+    offer: dict,
+    offer_id: str,
+    emoji_alts: dict[str, str],
+    *,
+    custom_emoji: bool = True,
 ) -> InlineQueryResultArticle:
     return InlineQueryResultArticle(
         id=offer_id,
         title="Purchase offer · " + _format_price(offer["price"]) + " " + _currency_emoji(
-            offer.get("currency", "GRAM"), custom=False
+            offer.get("currency", "GRAM"), emoji_alts, custom=False
         ),
         description="Send the offer with Accept and Decline buttons",
         input_message_content=InputTextMessageContent(
-            message_text=_offer_text(offer, custom_emoji=custom_emoji),
+            message_text=_offer_text(offer, emoji_alts=emoji_alts, custom_emoji=custom_emoji),
             parse_mode="HTML",
             link_preview_options=LinkPreviewOptions(
                 is_disabled=False,
@@ -316,10 +353,11 @@ def _inline_offer_result(
 async def _edit_inline_message(query: CallbackQuery, offer: dict, settings: MarketSettings) -> None:
     if not query.inline_message_id:
         return
+    emoji_alts = await _currency_emoji_alts(query.bot)
     try:
         await query.bot.edit_message_text(
             inline_message_id=query.inline_message_id,
-            text=_offer_text(offer),
+            text=_offer_text(offer, emoji_alts=emoji_alts),
             reply_markup=_current_keyboard(offer, settings),
             parse_mode="HTML",
             link_preview_options=LinkPreviewOptions(
@@ -333,7 +371,7 @@ async def _edit_inline_message(query: CallbackQuery, offer: dict, settings: Mark
         log.warning("Telegram rejected custom emoji while editing offer; using standard emoji (%s)", exc)
         await query.bot.edit_message_text(
             inline_message_id=query.inline_message_id,
-            text=_offer_text(offer, custom_emoji=False),
+            text=_offer_text(offer, emoji_alts=emoji_alts, custom_emoji=False),
             reply_markup=_current_keyboard(offer, settings),
             parse_mode="HTML",
             link_preview_options=LinkPreviewOptions(
