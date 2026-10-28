@@ -1,0 +1,1 @@
+"""Quest Market bot package."""
