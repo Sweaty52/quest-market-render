@@ -11,3 +11,5 @@ Create a Render Blueprint from this private repository. The Blueprint starts the
 - `MARKET_ALLOWED_USER_IDS` — comma-separated Telegram IDs allowed to publish inline offers.
 
 The catalog is demo inventory; offer prices are entered in GRAM or Telegram Stars. Gift transfers are handled manually through `tg://send_gift?to=questbankk`. Free Render web services may sleep after inactivity, so the first request can take time to wake the service.
+
+Offer messages display GRAM (`5264766603584641330`) and Stars (`5220029283631672529`) as Telegram custom emoji, without currency-name text. The emoji's Unicode character is the fallback on clients that cannot display custom emoji. If Telegram rejects the custom emoji entity, the bot retries the offer with the standard emoji.
