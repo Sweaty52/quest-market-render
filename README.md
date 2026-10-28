@@ -12,4 +12,4 @@ Create a Render Blueprint from this private repository. The Blueprint starts the
 
 The catalog is demo inventory; offer prices are entered in GRAM or Telegram Stars. Gift transfers are handled manually through `tg://send_gift?to=questbankk`. Free Render web services may sleep after inactivity, so the first request can take time to wake the service.
 
-Offer messages display currency labels as text: `GRAM` or `⭐ Stars`.
+Offer messages display currency labels as plain text without emoji: `GRAM` or `Stars`.

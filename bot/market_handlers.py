@@ -41,7 +41,7 @@ def _format_price(value: Decimal | str) -> str:
 
 
 def _currency_label(currency: str) -> str:
-    return "⭐ Stars" if currency == "STARS" else "GRAM"
+    return "Stars" if currency == "STARS" else "GRAM"
 
 
 def _valid_nft_url(value: str) -> bool:
