@@ -60,15 +60,17 @@ async def _currency_emoji_alts(bot: Bot) -> dict[str, str]:
     except TelegramAPIError as exc:
         log.warning("Could not retrieve currency custom emoji metadata (%s)", type(exc).__name__)
         return {}
-    _CURRENCY_EMOJI_ALTS = {
+    emoji_alts = {
         str(sticker.custom_emoji_id): sticker.emoji
         for sticker in stickers
         if sticker.custom_emoji_id and sticker.emoji
     }
-    missing_ids = set(_CURRENCY_CUSTOM_EMOJI_IDS.values()) - _CURRENCY_EMOJI_ALTS.keys()
+    missing_ids = set(_CURRENCY_CUSTOM_EMOJI_IDS.values()) - emoji_alts.keys()
     if missing_ids:
         log.warning("Telegram returned no metadata for currency custom emoji IDs: %s", ", ".join(sorted(missing_ids)))
-    return _CURRENCY_EMOJI_ALTS
+        return emoji_alts
+    _CURRENCY_EMOJI_ALTS = emoji_alts
+    return emoji_alts
 
 
 def _currency_emoji(
