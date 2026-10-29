@@ -1,24 +1,28 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import re
-import secrets
-from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+from .market_database import MarketDatabase
+
 
 class MarketStore:
-    """Volatile Quest Market state; no database connection is required."""
+    """Persistent offer and gift records with a process-local static catalog."""
 
-    def __init__(self) -> None:
-        self._offers: dict[str, dict[str, Any]] = {}
+    def __init__(self, database_url: str) -> None:
+        self.database = MarketDatabase(database_url)
         self._items: list[dict[str, Any]] = []
-        self._lock = asyncio.Lock()
         self._load_static_catalog()
+
+    async def initialize(self) -> None:
+        await self.database.initialize()
+
+    async def close(self) -> None:
+        await self.database.close()
 
     def _load_static_catalog(self) -> None:
         root = Path(__file__).parent.parent
@@ -54,54 +58,18 @@ class MarketStore:
         language: str = "en",
         currency: str = "GRAM",
     ) -> dict[str, Any]:
-        async with self._lock:
-            for _ in range(4):
-                offer_id = secrets.token_hex(6)
-                if offer_id not in self._offers:
-                    now = datetime.now(timezone.utc)
-                    offer = {
-                        "id": offer_id,
-                        "buyer_id": buyer_id,
-                        "buyer_label": buyer_label[:120],
-                        "nft_url": nft_url,
-                        "price": price,
-                        "currency": currency,
-                        "language": language,
-                        "status": "pending",
-                        "accepted_by": None,
-                        "created_at": now,
-                        "expires_at": now + timedelta(hours=6),
-                        "updated_at": now,
-                    }
-                    self._offers[offer_id] = offer
-                    return offer.copy()
-        raise RuntimeError("Could not allocate a unique market offer id")
+        return await self.database.create_offer(
+            buyer_id, buyer_label, nft_url, price, language, currency
+        )
 
     async def get_offer(self, offer_id: str) -> dict[str, Any] | None:
-        async with self._lock:
-            offer = self._offers.get(offer_id)
-            if offer and offer["status"] == "pending" and offer["expires_at"] <= datetime.now(timezone.utc):
-                offer["status"] = "expired"
-                offer["updated_at"] = datetime.now(timezone.utc)
-            return offer.copy() if offer else None
+        return await self.database.get_offer(offer_id)
 
     async def offers_for_buyer(self, buyer_id: int, limit: int = 30) -> list[dict[str, Any]]:
-        async with self._lock:
-            rows = [offer for offer in self._offers.values() if offer["buyer_id"] == buyer_id]
-            rows.sort(key=lambda offer: offer["created_at"], reverse=True)
-            return [offer.copy() for offer in rows[:limit]]
+        return await self.database.offers_for_buyer(buyer_id, limit)
 
     async def public_offers(self, limit: int = 50) -> list[dict[str, Any]]:
-        async with self._lock:
-            rows = [offer for offer in self._offers.values() if offer["status"] == "pending"]
-            now = datetime.now(timezone.utc)
-            for offer in rows:
-                if offer["expires_at"] <= now:
-                    offer["status"] = "expired"
-                    offer["updated_at"] = now
-            rows = [offer for offer in rows if offer["status"] == "pending"]
-            rows.sort(key=lambda offer: offer["created_at"], reverse=True)
-            return [offer.copy() for offer in rows[:limit]]
+        return await self.database.public_offers(limit)
 
     async def seed_gift_links(self) -> int:
         gift_count = sum(item["category"] == "gift" for item in self._items)
@@ -171,39 +139,42 @@ class MarketStore:
         return selected, len(rows), collections
 
     async def accept_offer(self, offer_id: str, seller_id: int) -> dict[str, Any] | None:
-        return await self._change_offer(offer_id, seller_id, "pending", "accepted", disallow_buyer=True)
+        return await self.database.change_offer(
+            offer_id, seller_id, "pending", "accepted", disallow_buyer=True
+        )
 
     async def reject_offer(self, offer_id: str, seller_id: int) -> dict[str, Any] | None:
-        return await self._change_offer(offer_id, seller_id, "pending", "rejected", disallow_buyer=True)
+        return await self.database.change_offer(
+            offer_id, seller_id, "pending", "rejected", disallow_buyer=True
+        )
 
     async def mark_gift_sent(self, offer_id: str, seller_id: int) -> dict[str, Any] | None:
-        return await self._change_offer(offer_id, seller_id, "accepted", "gift_sent", require_accepted_by=True)
+        return await self.database.change_offer(
+            offer_id, seller_id, "accepted", "gift_sent", require_accepted_by=True
+        )
 
-    async def _change_offer(
-        self,
-        offer_id: str,
-        user_id: int,
-        expected_status: str,
-        new_status: str,
-        *,
-        disallow_buyer: bool = False,
-        require_accepted_by: bool = False,
+    async def record_gift(self, **gift: Any) -> tuple[dict[str, Any], bool]:
+        return await self.database.record_gift(**gift)
+
+    async def link_gift_to_offer(
+        self, record_id: str, offer_id: str, sender_id: int
     ) -> dict[str, Any] | None:
-        async with self._lock:
-            offer = self._offers.get(offer_id)
-            if not offer or offer["status"] != expected_status:
-                return None
-            now = datetime.now(timezone.utc)
-            if expected_status == "pending" and offer["expires_at"] <= now:
-                offer["status"] = "expired"
-                offer["updated_at"] = now
-                return None
-            if disallow_buyer and offer["buyer_id"] == user_id:
-                return None
-            if require_accepted_by and offer["accepted_by"] != user_id:
-                return None
-            offer["status"] = new_status
-            if new_status in {"accepted", "rejected"}:
-                offer["accepted_by"] = user_id
-            offer["updated_at"] = now
-            return offer.copy()
+        return await self.database.link_gift_to_offer(record_id, offer_id, sender_id)
+
+    async def pending_transfer_gifts(self, limit: int = 20) -> list[dict[str, Any]]:
+        return await self.database.pending_transfer_gifts(limit)
+
+    async def confirm_gift_transfer(self, record_id: str) -> tuple[dict[str, Any] | None, bool]:
+        return await self.database.confirm_gift_transfer(record_id)
+
+    async def claim_pending_notifications(self, limit: int = 20) -> list[dict[str, Any]]:
+        return await self.database.claim_pending_notifications(limit)
+
+    async def finish_notification(
+        self,
+        record_id: str,
+        *,
+        message_id: int | None = None,
+        error: str | None = None,
+    ) -> None:
+        await self.database.finish_notification(record_id, message_id=message_id, error=error)

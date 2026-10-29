@@ -14,9 +14,17 @@ services:
         value: webhook
       - key: MARKET_BOT_TOKEN
         sync: false
+      - key: MARKET_DATABASE_URL
+        sync: false
       - key: MARKET_ALLOWED_USER_IDS
         sync: false
       - key: MARKET_ACCESS_CHAT_ID
         value: "-1004447182501"
+      - key: BANK_USERNAME
+        value: questbankk
+      - key: OFFERS_GROUP_ID
+        value: "-1004447182501"
+      - key: GIFT_NOTIFICATION_RETRY_SECONDS
+        value: "60"
       - key: MARKET_ACCOUNT_URL
         value: tg://send_gift?to=questbankk

@@ -4,7 +4,8 @@ import re
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from html import escape
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
+from uuid import UUID
 
 from aiogram import Bot, F, Router
 from aiogram.enums import ChatMemberStatus, ChatType
@@ -24,6 +25,7 @@ from aiogram.types import (
 )
 
 from .config import MarketSettings
+from .gift_notifications import deliver_pending_gift_notifications
 from .market_store import MarketStore
 
 router = Router(name="quest-market")
@@ -105,7 +107,7 @@ def _offer_text(
     statuses = {
         "accepted": "\n<b>Offer accepted.</b> Transfer the gift to Quest Market (@questbankk), then tap “I've transferred”.",
         "rejected": "\nThe seller declined this offer.",
-        "gift_sent": "\nThe seller marked the collectible as transferred. Quest Market will verify receipt.",
+        "gift_sent": "\nThe seller reported the transfer. It is not complete until an admin verifies receipt in the bank account.",
     }
 
     body = pending if current_status == "pending" else statuses.get(current_status, "")
@@ -150,6 +152,90 @@ def _current_keyboard(offer: dict, settings: MarketSettings) -> InlineKeyboardMa
 async def show_user_id(message: Message) -> None:
     if message.from_user:
         await message.answer(f"Your Telegram ID: <code>{message.from_user.id}</code>", parse_mode="HTML")
+
+
+def _gift_details(message: Message) -> dict:
+    if message.unique_gift:
+        info = message.unique_gift
+        gift = info.gift
+        base_name = gift.base_name
+        gift_url = (
+            f"https://t.me/nft/{quote(base_name, safe='')}-{gift.number}"
+            if base_name and gift.number is not None
+            else None
+        )
+        return {
+            "telegram_gift_id": None,
+            "telegram_owned_gift_id": info.owned_gift_id,
+            "gift_name": f"{gift.name} #{gift.number}" if gift.number is not None else gift.name,
+            "gift_url": gift_url,
+            "model_name": gift.model.name if gift.model else None,
+            "backdrop_name": gift.backdrop.name if gift.backdrop else None,
+            "symbol_name": gift.symbol.name if gift.symbol else None,
+            "metadata": info.model_dump(mode="json", exclude_none=True),
+        }
+
+    if message.gift:
+        info = message.gift
+        gift = info.gift
+        return {
+            "telegram_gift_id": str(gift.id),
+            "telegram_owned_gift_id": info.owned_gift_id,
+            "gift_name": f"Telegram gift {gift.id}",
+            "gift_url": None,
+            "model_name": None,
+            "backdrop_name": None,
+            "symbol_name": None,
+            "metadata": info.model_dump(mode="json", exclude_none=True),
+        }
+    raise ValueError("The message does not contain a Telegram gift.")
+
+
+@router.message(F.gift | F.unique_gift)
+async def receive_gift(message: Message, bot: Bot, store: MarketStore, settings: MarketSettings) -> None:
+    if message.chat.type != ChatType.PRIVATE:
+        return
+    user = message.from_user
+    if user is None:
+        return
+    if not await _user_has_market_access(user.id, bot, settings):
+        await message.answer("Only authorized Quest Market users can register gifts.")
+        return
+
+    details = _gift_details(message)
+    gift, created = await store.record_gift(
+        sender_id=user.id,
+        sender_username=user.username,
+        sender_name=user.full_name,
+        source_chat_id=message.chat.id,
+        source_message_id=message.message_id,
+        received_at=message.date,
+        **details,
+    )
+    if not created:
+        if gift["sender_id"] != user.id:
+            await message.answer("This unique Telegram gift has already been registered.")
+            return
+        await message.answer(
+            f"This gift was already recorded. Record ID: <code>{gift['record_id']}</code>",
+            parse_mode="HTML",
+        )
+        return
+
+    if gift["offer_id"]:
+        offer_text = f"Linked offer: <code>{gift['offer_id']}</code>."
+    else:
+        offer_text = (
+            "No single accepted offer could be matched automatically. "
+            "If this gift belongs to an offer, link it with "
+            f"<code>/linkgift {gift['record_id']} OFFER_ID</code>."
+        )
+    await message.answer(
+        f"Gift saved with status <b>received</b>.\n"
+        f"Record ID: <code>{gift['record_id']}</code>\n{offer_text}\n\n"
+        "A bank admin must verify the gift in the bank account before it is marked transferred.",
+        parse_mode="HTML",
+    )
 
 
 @router.message(Command("start"))
@@ -265,6 +351,93 @@ async def create_buy_offer(
     )
 
 
+@router.message(Command("linkgift"))
+async def link_gift(message: Message, bot: Bot, store: MarketStore, settings: MarketSettings) -> None:
+    user = message.from_user
+    if message.chat.type != ChatType.PRIVATE or user is None:
+        return
+    if not await _user_has_market_access(user.id, bot, settings):
+        await message.answer("Only authorized Quest Market users can link gifts to offers.")
+        return
+    parts = (message.text or "").split()
+    if len(parts) != 3 or not _OFFER_ID_RE.fullmatch(parts[2]):
+        await message.answer("Usage: <code>/linkgift GIFT_RECORD_ID OFFER_ID</code>", parse_mode="HTML")
+        return
+    try:
+        record_id = str(UUID(parts[1]))
+    except ValueError:
+        await message.answer("Invalid gift record ID.")
+        return
+    gift = await store.link_gift_to_offer(record_id, parts[2], user.id)
+    if gift is None:
+        await message.answer(
+            "Could not link that gift. It must belong to you, and the offer must be accepted by you."
+        )
+        return
+    await message.answer(f"Gift linked to offer <code>{parts[2]}</code>.", parse_mode="HTML")
+
+
+async def _is_offers_group_admin(message: Message, bot: Bot, settings: MarketSettings) -> bool:
+    user = message.from_user
+    group_id = settings.offers_group_id
+    if group_id is None or message.chat.id != group_id or user is None:
+        return False
+    member = await bot.get_chat_member(group_id, user.id)
+    return member.status in {ChatMemberStatus.CREATOR, ChatMemberStatus.ADMINISTRATOR}
+
+
+@router.message(Command("pendinggifts"))
+async def pending_gifts(message: Message, bot: Bot, store: MarketStore, settings: MarketSettings) -> None:
+    if not await _is_offers_group_admin(message, bot, settings):
+        return
+    pending = await store.pending_transfer_gifts()
+    if not pending:
+        await message.answer("No received gifts are waiting for transfer verification.")
+        return
+    lines = [
+        f"• <code>{gift['record_id']}</code> — {escape(gift['gift_name'])} "
+        f"(offer <code>{gift['offer_id']}</code>)"
+        for gift in pending[:10]
+    ]
+    await message.answer(
+        "Verify each gift in the bank account before confirming:\n" + "\n".join(lines)
+        + f"\n\nUse <code>/confirmgift GIFT_RECORD_ID</code> only after checking @{escape(settings.bank_username)}.",
+        parse_mode="HTML",
+    )
+
+
+@router.message(Command("confirmgift"))
+async def confirm_gift(
+    message: Message,
+    bot: Bot,
+    store: MarketStore,
+    settings: MarketSettings,
+) -> None:
+    if not await _is_offers_group_admin(message, bot, settings):
+        return
+    parts = (message.text or "").split()
+    if len(parts) != 2:
+        await message.answer("Usage: <code>/confirmgift GIFT_RECORD_ID</code>", parse_mode="HTML")
+        return
+    try:
+        record_id = str(UUID(parts[1]))
+    except ValueError:
+        await message.answer("Invalid gift record ID.")
+        return
+    gift, newly_confirmed = await store.confirm_gift_transfer(record_id)
+    if gift is None:
+        await message.answer("Gift not found, not linked to an accepted offer, or not awaiting verification.")
+        return
+    if not newly_confirmed:
+        await message.answer("This gift was already confirmed; no duplicate notification was queued.")
+        return
+    await deliver_pending_gift_notifications(bot, store, settings)
+    await message.answer(
+        f"Transfer recorded for @{escape(settings.bank_username)}. "
+        "The group notification was sent or queued for retry."
+    )
+
+
 @router.inline_query()
 async def inline_offer(query: InlineQuery, bot: Bot, store: MarketStore, settings: MarketSettings) -> None:
     if not await _user_has_market_access(query.from_user.id, bot, settings):
@@ -352,7 +525,7 @@ async def offer_action(query: CallbackQuery, store: MarketStore, settings: Marke
         success_text = "Offer declined."
     elif action == "s":
         offer = await store.mark_gift_sent(offer_id, user_id)
-        success_text = "Marked as transferred. Quest Market must verify receipt."
+        success_text = "Transfer reported. A bank admin must still verify receipt."
     else:
         await query.answer("Unknown action.", show_alert=True)
         return
