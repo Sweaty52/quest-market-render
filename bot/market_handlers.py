@@ -6,11 +6,12 @@ from decimal import Decimal, InvalidOperation
 from html import escape
 from urllib.parse import urlsplit
 
-from aiogram import F, Router
-from aiogram.enums import ChatType
+from aiogram import Bot, F, Router
+from aiogram.enums import ChatMemberStatus, ChatType
 from aiogram.filters import Command
 from aiogram.types import (
     CallbackQuery,
+    ChatMemberRestricted,
     CopyTextButton,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -33,6 +34,21 @@ _BUY_RE = re.compile(
     r"^(?:\.buy|/buy)\s+(?:eng\s+)?(?:(gram|grams|star|stars)\s+)?(\S+)\s+(\S+)(?:\s+(gram|grams|star|stars))?\s*$",
     re.IGNORECASE,
 )
+
+
+async def _user_has_market_access(user_id: int, bot: Bot, settings: MarketSettings) -> bool:
+    if settings.user_has_market_access(user_id):
+        return True
+    if settings.market_access_chat_id is None:
+        return False
+    member = await bot.get_chat_member(settings.market_access_chat_id, user_id)
+    if member.status in {
+        ChatMemberStatus.CREATOR,
+        ChatMemberStatus.ADMINISTRATOR,
+        ChatMemberStatus.MEMBER,
+    }:
+        return True
+    return isinstance(member, ChatMemberRestricted) and member.is_member
 
 
 def _format_price(value: Decimal | str) -> str:
@@ -137,9 +153,9 @@ async def show_user_id(message: Message) -> None:
 
 
 @router.message(Command("start"))
-async def start(message: Message, settings: MarketSettings) -> None:
+async def start(message: Message, bot: Bot, settings: MarketSettings) -> None:
     user_id = message.from_user.id if message.from_user else None
-    has_inline_access = user_id is not None and settings.user_has_market_access(user_id)
+    has_inline_access = user_id is not None and await _user_has_market_access(user_id, bot, settings)
     if has_inline_access:
         name = escape(message.from_user.first_name, quote=True)
         text = (
@@ -186,6 +202,7 @@ async def market_how_it_works(callback: CallbackQuery) -> None:
 @router.message(F.text.startswith(".buy") | F.text.startswith("/buy"))
 async def create_buy_offer(
     message: Message,
+    bot: Bot,
     store: MarketStore,
     bot_username: str,
     settings: MarketSettings,
@@ -234,6 +251,9 @@ async def create_buy_offer(
     user = message.from_user
     if user is None:
         return
+    if not await _user_has_market_access(user.id, bot, settings):
+        await message.answer("Quest Market offers are available to members of the authorized Telegram chat.")
+        return
     buyer_label = f"@{user.username}" if user.username else user.full_name
     offer = await store.create_offer(user.id, buyer_label, nft_url, price, currency=currency, language="en")
     success_text = "✅ <b>Offer created.</b> Tap Copy inline, paste the query in the target chat, then select the result:"
@@ -246,8 +266,8 @@ async def create_buy_offer(
 
 
 @router.inline_query()
-async def inline_offer(query: InlineQuery, store: MarketStore, settings: MarketSettings) -> None:
-    if not settings.user_has_market_access(query.from_user.id):
+async def inline_offer(query: InlineQuery, bot: Bot, store: MarketStore, settings: MarketSettings) -> None:
+    if not await _user_has_market_access(query.from_user.id, bot, settings):
         await query.answer([], cache_time=0, is_personal=True)
         return
     offer_id = (query.query or "").strip()

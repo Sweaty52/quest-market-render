@@ -48,6 +48,7 @@ class MarketSettings(BaseSettings):
     market_bot_token: str
     market_account_url: str = "tg://send_gift?to=questbankk"
     market_allowed_user_ids: str = ""
+    market_access_chat_id: int | None = None
     bot_mode: Literal["polling", "webhook"] = "polling"
     webapp_url: str = ""
     webapp_host: str = "0.0.0.0"
@@ -116,4 +117,3 @@ class MarketSettings(BaseSettings):
         if parsed.scheme != "https" or not parsed.hostname:
             raise ValueError("WEBAPP_URL must be a public HTTPS URL")
         return value
-
