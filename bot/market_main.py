@@ -41,9 +41,8 @@ async def main() -> None:
         await store.initialize()
         gift_count = await store.seed_gift_links()
         me = await bot.get_me()
-        dispatcher["bot_username"] = me.username or "quest_mkt_bot"
         await bot.set_my_commands([
-            BotCommand(command="start", description="Open Quest Market"),
+            BotCommand(command="start", description="Create Business offers"),
             BotCommand(command="myid", description="Show your Telegram ID"),
             BotCommand(command="linkgift", description="Link a gift to an accepted offer"),
             BotCommand(command="pendinggifts", description="List gifts awaiting bank verification"),

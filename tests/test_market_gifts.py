@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock
 from aiogram.enums import ChatMemberStatus, ChatType
 from aiogram.exceptions import TelegramNetworkError
 from aiogram.methods import SendMessage
+from sqlalchemy import inspect
 
 from bot.config import MarketSettings
 from bot.gift_notifications import deliver_pending_gift_notifications, transfer_notification_text
@@ -77,6 +78,64 @@ class GiftDatabaseTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(gift["offer_creator_username"], "offer_creator")
         self.assertEqual(gift["offer_price"], Decimal("12.500000000"))
         self.assertEqual(gift["model_name"], "Blue")
+
+    async def test_targeted_offer_can_only_be_accepted_by_its_recipient(self) -> None:
+        offer = await self.store.create_offer(
+            buyer_id=100,
+            buyer_label="@offer_creator",
+            nft_url="https://t.me/nft/Collectible-12",
+            price=Decimal("12.5"),
+            currency="GRAM",
+            recipient_id=200,
+        )
+
+        self.assertIsNone(await self.store.accept_offer(offer["id"], 201))
+        accepted = await self.store.accept_offer(offer["id"], 200)
+
+        self.assertIsNotNone(accepted)
+        self.assertEqual(accepted["recipient_id"], 200)
+
+    async def test_startup_adds_recipient_column_to_existing_offers_table(self) -> None:
+        async with self.store.database.engine.begin() as connection:
+            await connection.exec_driver_sql(
+                "ALTER TABLE market_offers DROP COLUMN recipient_id"
+            )
+        await self.store.close()
+        self.store = MarketStore(self.database_url)
+        await self.store.initialize()
+
+        async with self.store.database.engine.connect() as connection:
+            columns = await connection.run_sync(
+                lambda sync_connection: {
+                    column["name"] for column in inspect(sync_connection).get_columns("market_offers")
+                }
+            )
+        self.assertIn("recipient_id", columns)
+
+    async def test_business_connection_survives_restart_and_disabled_connection_is_ignored(self) -> None:
+        await self.store.save_business_connection(
+            connection_id="business-connection-1",
+            business_user_id=900,
+            user_chat_id=900,
+            is_enabled=True,
+            can_reply=True,
+        )
+        await self.store.close()
+        self.store = MarketStore(self.database_url)
+        await self.store.initialize()
+
+        connection = await self.store.get_business_connection(900)
+        self.assertIsNotNone(connection)
+        self.assertEqual(connection["id"], "business-connection-1")
+
+        await self.store.save_business_connection(
+            connection_id="business-connection-1",
+            business_user_id=900,
+            user_chat_id=900,
+            is_enabled=False,
+            can_reply=False,
+        )
+        self.assertIsNone(await self.store.get_business_connection(900))
 
     async def test_message_identity_deduplicates_non_unique_gifts(self) -> None:
         gift, created = await self._receive_gift(owned_gift_id=None)

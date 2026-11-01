@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
@@ -9,16 +10,14 @@ from uuid import UUID
 
 from aiogram import Bot, F, Router
 from aiogram.enums import ChatMemberStatus, ChatType
+from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import Command
 from aiogram.types import (
+    BusinessConnection,
     CallbackQuery,
     ChatMemberRestricted,
-    CopyTextButton,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
-    InlineQuery,
-    InlineQueryResultArticle,
-    InputTextMessageContent,
     LinkPreviewOptions,
     Message,
     WebAppInfo,
@@ -28,14 +27,17 @@ from .config import MarketSettings
 from .gift_notifications import deliver_pending_gift_notifications
 from .market_store import MarketStore
 
+log = logging.getLogger(__name__)
 router = Router(name="quest-market")
 _PRICE_RE = re.compile(r"^(?:0|[1-9]\d{0,20})(?:[.,]\d{1,9})?$")
 _STARS_PRICE_RE = re.compile(r"^[1-9]\d{0,20}$")
 _OFFER_ID_RE = re.compile(r"^[0-9a-f]{12}$")
 _BUY_RE = re.compile(
-    r"^(?:\.buy|/buy)\s+(?:eng\s+)?(?:(gram|grams|star|stars)\s+)?(\S+)\s+(\S+)(?:\s+(gram|grams|star|stars))?\s*$",
+    r"^(?:\.buy|/buy)\s+(?:eng\s+)?(?:(gram|grams|star|stars)\s+)?([1-9]\d{0,15})\s+(\S+)\s+(\S+)(?:\s+(gram|grams|star|stars))?\s*$",
     re.IGNORECASE,
 )
+_GRAM_CUSTOM_EMOJI_ID = "5264766603584641330"
+_STARS_CUSTOM_EMOJI_ID = "5220029283631672529"
 
 
 async def _user_has_market_access(user_id: int, bot: Bot, settings: MarketSettings) -> bool:
@@ -90,10 +92,18 @@ def _gift_label(nft_url: str) -> str:
 def _offer_text(
     offer: dict,
     status: str | None = None,
+    *,
+    use_business_emojis: bool = False,
 ) -> str:
     current_status = status or offer["status"]
     price = _format_price(offer["price"])
-    currency = _currency_label(offer.get("currency", "GRAM"))
+    if use_business_emojis:
+        if offer.get("currency") == "STARS":
+            currency = f'<tg-emoji emoji-id="{_STARS_CUSTOM_EMOJI_ID}">⭐</tg-emoji>'
+        else:
+            currency = f'<tg-emoji emoji-id="{_GRAM_CUSTOM_EMOJI_ID}">🪙</tg-emoji>'
+    else:
+        currency = _currency_label(offer.get("currency", "GRAM"))
     link = escape(str(offer["nft_url"]), quote=True)
     buyer_label = escape(str(offer.get("buyer_label") or "A user"), quote=True)
     gift_label = escape(_gift_label(str(offer["nft_url"])), quote=True)
@@ -131,13 +141,6 @@ def _accepted_keyboard(offer_id: str, transfer_url: str = "") -> InlineKeyboardM
         [transfer_button, InlineKeyboardButton(text="I've transferred", callback_data=f"qm:s:{offer_id}")],
         [InlineKeyboardButton(text="How it works", callback_data=f"qm:h:{offer_id}")],
     ])
-
-
-def _share_keyboard(offer: dict, bot_username: str = "quest_mkt_bot") -> InlineKeyboardMarkup:
-    inline_query = f"@{bot_username} {offer['id']}"
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="Copy inline", copy_text=CopyTextButton(text=inline_query))
-    ]])
 
 
 def _current_keyboard(offer: dict, settings: MarketSettings) -> InlineKeyboardMarkup | None:
@@ -191,6 +194,30 @@ def _gift_details(message: Message) -> dict:
     raise ValueError("The message does not contain a Telegram gift.")
 
 
+@router.business_connection()
+async def update_business_connection(
+    connection: BusinessConnection,
+    store: MarketStore,
+) -> None:
+    can_reply = bool(
+        connection.can_reply
+        or (connection.rights and connection.rights.can_reply)
+    )
+    await store.save_business_connection(
+        connection_id=connection.id,
+        business_user_id=connection.user.id,
+        user_chat_id=connection.user_chat_id,
+        is_enabled=connection.is_enabled,
+        can_reply=can_reply,
+    )
+    log.info(
+        "Business connection updated for user %s (enabled=%s, can_reply=%s)",
+        connection.user.id,
+        connection.is_enabled,
+        can_reply,
+    )
+
+
 @router.message(F.gift | F.unique_gift)
 async def receive_gift(message: Message, bot: Bot, store: MarketStore, settings: MarketSettings) -> None:
     if message.chat.type != ChatType.PRIVATE:
@@ -241,15 +268,16 @@ async def receive_gift(message: Message, bot: Bot, store: MarketStore, settings:
 @router.message(Command("start"))
 async def start(message: Message, bot: Bot, settings: MarketSettings) -> None:
     user_id = message.from_user.id if message.from_user else None
-    has_inline_access = user_id is not None and await _user_has_market_access(user_id, bot, settings)
-    if has_inline_access:
+    has_market_access = user_id is not None and await _user_has_market_access(user_id, bot, settings)
+    if has_market_access:
         name = escape(message.from_user.first_name, quote=True)
         text = (
             f"Hello, {name}! Welcome to <b>Quest Market</b>.\n\n"
-            "Create an offer with one command:\n"
-            "<code>.buy https://t.me/nft/Collectible-123 12.5 grams</code>\n"
-            "<code>.buy https://t.me/nft/Collectible-123 500 stars</code>\n\n"
-            "The bot will create the inline offer. Tap <b>Copy inline</b>, paste it in the target chat, then select the result."
+            "Send an offer through your connected Telegram Business account:\n"
+            "<code>.buy 123456789 https://t.me/nft/Collectible-123 12.5 gram</code>\n"
+            "<code>.buy 123456789 https://t.me/nft/Collectible-123 500 stars</code>\n\n"
+            "Replace <code>123456789</code> with the recipient's numeric Telegram ID. "
+            "The recipient must be reachable through your Business account."
         )
         await message.answer(text, parse_mode="HTML")
     elif settings.public_webapp_url:
@@ -272,7 +300,7 @@ async def start(message: Message, bot: Bot, settings: MarketSettings) -> None:
                 InlineKeyboardButton(text="How it works", callback_data="market:how")
             ]]),
         )
-    elif not has_inline_access:
+    elif not has_market_access:
         await message.answer("The marketplace link is not configured yet.")
 
 
@@ -290,7 +318,6 @@ async def create_buy_offer(
     message: Message,
     bot: Bot,
     store: MarketStore,
-    bot_username: str,
     settings: MarketSettings,
 ) -> None:
     if message.chat.type != ChatType.PRIVATE:
@@ -300,13 +327,17 @@ async def create_buy_offer(
     match = _BUY_RE.fullmatch(text.strip())
     if not match:
         await message.answer(
-            "Format: <code>.buy eng https://t.me/nft/Collectible-123 12.5</code> for GRAM or "
-            "<code>.buy eng stars https://t.me/nft/Collectible-123 500</code> for Stars.",
+            "Format: <code>.buy RECIPIENT_ID https://t.me/nft/Collectible-123 12.5 gram</code> "
+            "or <code>.buy RECIPIENT_ID https://t.me/nft/Collectible-123 500 stars</code>.",
             parse_mode="HTML",
         )
         return
 
-    prefix_currency, nft_url, raw_price, suffix_currency = match.groups()
+    prefix_currency, target_id_text, nft_url, raw_price, suffix_currency = match.groups()
+    target_user_id = int(target_id_text)
+    if target_user_id > 2**52 - 1:
+        await message.answer("Recipient ID is outside Telegram's supported range.")
+        return
     if prefix_currency and suffix_currency:
         prefix_is_stars = prefix_currency.casefold().startswith("star")
         suffix_is_stars = suffix_currency.casefold().startswith("star")
@@ -340,13 +371,58 @@ async def create_buy_offer(
     if not await _user_has_market_access(user.id, bot, settings):
         await message.answer("Quest Market offers are available to members of the authorized Telegram chat.")
         return
+    if target_user_id == user.id:
+        await message.answer("You cannot send an offer to yourself.")
+        return
+    business_connection = await store.get_business_connection(user.id)
+    if business_connection is None:
+        await message.answer(
+            "Connect this bot to your Telegram Business account and allow it to reply to chats "
+            "before sending business offers."
+        )
+        return
+
     buyer_label = f"@{user.username}" if user.username else user.full_name
-    offer = await store.create_offer(user.id, buyer_label, nft_url, price, currency=currency, language="en")
-    success_text = "✅ <b>Offer created.</b> Tap Copy inline, paste the query in the target chat, then select the result:"
+    offer = await store.create_offer(
+        user.id,
+        buyer_label,
+        nft_url,
+        price,
+        currency=currency,
+        language="en",
+        recipient_id=target_user_id,
+    )
+    try:
+        await bot.send_message(
+            chat_id=target_user_id,
+            business_connection_id=business_connection["id"],
+            text=_offer_text(offer, use_business_emojis=True),
+            parse_mode="HTML",
+            link_preview_options=LinkPreviewOptions(
+                is_disabled=False,
+                url=offer["nft_url"],
+                prefer_large_media=True,
+                show_above_text=True,
+            ),
+            reply_markup=_pending_keyboard(offer["id"]),
+        )
+    except TelegramAPIError:
+        log.exception(
+            "Could not deliver business offer %s to Telegram user %s",
+            offer["id"],
+            target_user_id,
+        )
+        await message.answer(
+            "Offer was saved, but Telegram could not deliver it to that recipient. "
+            "Check that the Business account can reply in their chat. "
+            f"Offer ID: <code>{offer['id']}</code>",
+            parse_mode="HTML",
+        )
+        return
+
     await message.answer(
-        success_text + "\n\n"
-        f"<code>@{escape(bot_username)} {offer['id']}</code>",
-        reply_markup=_share_keyboard(offer, bot_username),
+        f"✅ Offer <code>{offer['id']}</code> sent to Telegram user "
+        f"<code>{target_user_id}</code> from your Business account.",
         parse_mode="HTML",
     )
 
@@ -438,54 +514,36 @@ async def confirm_gift(
     )
 
 
-@router.inline_query()
-async def inline_offer(query: InlineQuery, bot: Bot, store: MarketStore, settings: MarketSettings) -> None:
-    if not await _user_has_market_access(query.from_user.id, bot, settings):
-        await query.answer([], cache_time=0, is_personal=True)
-        return
-    offer_id = (query.query or "").strip()
-    if not _OFFER_ID_RE.fullmatch(offer_id):
-        await query.answer([], cache_time=0, is_personal=True)
-        return
-    offer = await store.get_offer(offer_id)
-    if not offer or offer["buyer_id"] != query.from_user.id or offer["status"] != "pending":
-        await query.answer([], cache_time=0, is_personal=True)
-        return
-    await query.answer(
-        [_inline_offer_result(offer, offer_id)],
-        cache_time=0,
-        is_personal=True,
-    )
-
-
-def _inline_offer_result(
-    offer: dict,
-    offer_id: str,
-) -> InlineQueryResultArticle:
-    return InlineQueryResultArticle(
-        id=offer_id,
-        title="Purchase offer · " + _format_price(offer["price"]) + " " + _currency_label(offer.get("currency", "GRAM")),
-        description="Send the offer with Accept and Decline buttons",
-        input_message_content=InputTextMessageContent(
-            message_text=_offer_text(offer),
-            parse_mode="HTML",
-            link_preview_options=LinkPreviewOptions(
-                is_disabled=False,
-                url=offer["nft_url"],
-                prefer_large_media=True,
-                show_above_text=True,
-            ),
-        ),
-        reply_markup=_pending_keyboard(offer_id),
-    )
-
-
 async def _edit_inline_message(query: CallbackQuery, offer: dict, settings: MarketSettings) -> None:
     if not query.inline_message_id:
         return
     await query.bot.edit_message_text(
         inline_message_id=query.inline_message_id,
         text=_offer_text(offer),
+        reply_markup=_current_keyboard(offer, settings),
+        parse_mode="HTML",
+        link_preview_options=LinkPreviewOptions(
+            is_disabled=False,
+            url=offer["nft_url"],
+            prefer_large_media=True,
+            show_above_text=True,
+        ),
+    )
+
+
+async def _edit_offer_message(query: CallbackQuery, offer: dict, settings: MarketSettings) -> None:
+    if query.inline_message_id:
+        await _edit_inline_message(query, offer, settings)
+        return
+    if not isinstance(query.message, Message):
+        return
+
+    business_connection_id = query.message.business_connection_id
+    await query.bot.edit_message_text(
+        chat_id=query.message.chat.id,
+        message_id=query.message.message_id,
+        business_connection_id=business_connection_id,
+        text=_offer_text(offer, use_business_emojis=bool(business_connection_id)),
         reply_markup=_current_keyboard(offer, settings),
         parse_mode="HTML",
         link_preview_options=LinkPreviewOptions(
@@ -531,13 +589,16 @@ async def offer_action(query: CallbackQuery, store: MarketStore, settings: Marke
         return
 
     if offer:
-        await query.answer(success_text)
         try:
-            await _edit_inline_message(query, offer, settings)
-        except Exception:
-            # The callback still updates the authoritative offer state if an old inline
-            # message can no longer be edited by Telegram.
-            pass
+            await _edit_offer_message(query, offer, settings)
+        except TelegramAPIError:
+            log.exception("Could not update Telegram message for offer %s", offer_id)
+            await query.answer(
+                f"{success_text} The offer status was saved, but Telegram could not update its message.",
+                show_alert=True,
+            )
+            return
+        await query.answer(success_text)
         return
 
     current = await store.get_offer(offer_id)

@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -21,6 +22,7 @@ from sqlalchemy import (
     Table,
     Text,
     and_,
+    inspect,
     insert,
     or_,
     select,
@@ -39,6 +41,7 @@ offers = Table(
     _metadata,
     Column("id", String(12), primary_key=True),
     Column("buyer_id", BigInteger, nullable=False),
+    Column("recipient_id", BigInteger),
     Column("buyer_label", String(120), nullable=False),
     Column("buyer_username", String(64)),
     Column("nft_url", Text, nullable=False),
@@ -55,6 +58,18 @@ offers = Table(
     Index("ix_market_offers_buyer_created", "buyer_id", "created_at"),
     Index("ix_market_offers_status_expiry", "status", "expires_at"),
     Index("ix_market_offers_seller_status", "accepted_by", "status"),
+)
+
+business_connections = Table(
+    "market_business_connections",
+    _metadata,
+    Column("id", String(255), primary_key=True),
+    Column("business_user_id", BigInteger, nullable=False),
+    Column("user_chat_id", BigInteger, nullable=False),
+    Column("is_enabled", Boolean, nullable=False),
+    Column("can_reply", Boolean, nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+    Index("ix_market_business_connections_user", "business_user_id", "is_enabled", "can_reply"),
 )
 
 gifts = Table(
@@ -127,6 +142,12 @@ def _offer_creator_username(offer: dict[str, Any]) -> str | None:
     return label[1:] if label.startswith("@") else None
 
 
+def _add_offer_recipient_id(connection: Any) -> None:
+    columns = {column["name"] for column in inspect(connection).get_columns("market_offers")}
+    if "recipient_id" not in columns:
+        connection.exec_driver_sql("ALTER TABLE market_offers ADD COLUMN recipient_id BIGINT")
+
+
 class MarketDatabase:
     def __init__(self, database_url: str) -> None:
         normalized_url = _async_database_url(database_url)
@@ -139,13 +160,58 @@ class MarketDatabase:
             Path(database_path).expanduser().parent.mkdir(parents=True, exist_ok=True)
         self.engine: AsyncEngine = create_async_engine(normalized_url, pool_pre_ping=True)
         self._notification_lock = asyncio.Lock()
+        self._business_connection_lock = asyncio.Lock()
 
     async def initialize(self) -> None:
         async with self.engine.begin() as connection:
             await connection.run_sync(_metadata.create_all)
+            await connection.run_sync(_add_offer_recipient_id)
 
     async def close(self) -> None:
         await self.engine.dispose()
+
+    async def save_business_connection(
+        self,
+        *,
+        connection_id: str,
+        business_user_id: int,
+        user_chat_id: int,
+        is_enabled: bool,
+        can_reply: bool,
+    ) -> None:
+        values = {
+            "business_user_id": business_user_id,
+            "user_chat_id": user_chat_id,
+            "is_enabled": is_enabled,
+            "can_reply": can_reply,
+            "updated_at": datetime.now(timezone.utc),
+        }
+        async with self._business_connection_lock:
+            async with self.engine.begin() as connection:
+                updated = await connection.execute(
+                    update(business_connections)
+                    .where(business_connections.c.id == connection_id)
+                    .values(**values)
+                )
+                if updated.rowcount == 0:
+                    await connection.execute(
+                        insert(business_connections).values(id=connection_id, **values)
+                    )
+
+    async def get_business_connection(self, business_user_id: int) -> dict[str, Any] | None:
+        async with self.engine.connect() as connection:
+            result = await connection.execute(
+                select(business_connections)
+                .where(
+                    business_connections.c.business_user_id == business_user_id,
+                    business_connections.c.is_enabled.is_(True),
+                    business_connections.c.can_reply.is_(True),
+                )
+                .order_by(business_connections.c.updated_at.desc())
+                .limit(1)
+            )
+            row = result.mappings().first()
+            return dict(row) if row is not None else None
 
     async def create_offer(
         self,
@@ -155,11 +221,13 @@ class MarketDatabase:
         price: Decimal,
         language: str,
         currency: str,
+        recipient_id: int | None = None,
     ) -> dict[str, Any]:
         now = datetime.now(timezone.utc)
         offer = {
             "id": uuid4().hex[:12],
             "buyer_id": buyer_id,
+            "recipient_id": recipient_id,
             "buyer_label": buyer_label[:120],
             "buyer_username": _offer_creator_username({"buyer_label": buyer_label}),
             "nft_url": nft_url,
@@ -239,6 +307,12 @@ class MarketDatabase:
                 return None
             offer = _row_dict(row)
             if offer["status"] != expected_status:
+                return None
+            if (
+                expected_status == "pending"
+                and offer.get("recipient_id") is not None
+                and offer["recipient_id"] != user_id
+            ):
                 return None
             if expected_status == "pending" and offer["expires_at"] <= now:
                 await connection.execute(

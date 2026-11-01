@@ -24,6 +24,26 @@ class MarketStore:
     async def close(self) -> None:
         await self.database.close()
 
+    async def save_business_connection(
+        self,
+        *,
+        connection_id: str,
+        business_user_id: int,
+        user_chat_id: int,
+        is_enabled: bool,
+        can_reply: bool,
+    ) -> None:
+        await self.database.save_business_connection(
+            connection_id=connection_id,
+            business_user_id=business_user_id,
+            user_chat_id=user_chat_id,
+            is_enabled=is_enabled,
+            can_reply=can_reply,
+        )
+
+    async def get_business_connection(self, business_user_id: int) -> dict[str, Any] | None:
+        return await self.database.get_business_connection(business_user_id)
+
     def _load_static_catalog(self) -> None:
         root = Path(__file__).parent.parent
         catalog_path = root / "catalog.json"
@@ -57,9 +77,10 @@ class MarketStore:
         price: Decimal,
         language: str = "en",
         currency: str = "GRAM",
+        recipient_id: int | None = None,
     ) -> dict[str, Any]:
         return await self.database.create_offer(
-            buyer_id, buyer_label, nft_url, price, language, currency
+            buyer_id, buyer_label, nft_url, price, language, currency, recipient_id
         )
 
     async def get_offer(self, offer_id: str) -> dict[str, Any] | None:

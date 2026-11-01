@@ -3,10 +3,16 @@ from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-from aiogram.enums import ChatMemberStatus
+from aiogram.enums import ChatMemberStatus, ChatType
 
 from bot.config import MarketSettings
-from bot.market_handlers import _inline_offer_result, _offer_text, _user_has_market_access
+from bot.market_handlers import (
+    _BUY_RE,
+    _offer_text,
+    _user_has_market_access,
+    create_buy_offer,
+    update_business_connection,
+)
 
 
 class OfferCurrencyLabelTests(unittest.TestCase):
@@ -27,18 +33,30 @@ class OfferCurrencyLabelTests(unittest.TestCase):
                 self.assertNotIn("⭐", text)
                 self.assertNotIn("<tg-emoji", text)
 
-    def test_inline_offer_title_and_message_use_original_currency_labels(self) -> None:
-        for currency, label in (("GRAM", "GRAM"), ("STARS", "Stars")):
+    def test_business_offer_uses_the_configured_custom_emoji(self) -> None:
+        expected_ids = {
+            "GRAM": ("5264766603584641330", "🪙", "GRAM"),
+            "STARS": ("5220029283631672529", "⭐", "Stars"),
+        }
+        for currency, (emoji_id, fallback, label) in expected_ids.items():
             with self.subTest(currency=currency):
-                result = _inline_offer_result(
-                    {**self.offer, "currency": currency}, "abcdef123456"
+                text = _offer_text(
+                    {**self.offer, "currency": currency},
+                    use_business_emojis=True,
                 )
 
-                self.assertIn(label, result.title)
-                self.assertIn(label, result.input_message_content.message_text)
-                self.assertNotIn("⭐", result.title)
-                self.assertNotIn("⭐", result.input_message_content.message_text)
-                self.assertEqual(result.input_message_content.parse_mode, "HTML")
+                self.assertIn(f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>', text)
+                self.assertNotIn(f"500 {label}", text)
+
+    def test_buy_command_requires_a_numeric_recipient_id(self) -> None:
+        match = _BUY_RE.fullmatch(
+            ".buy 123456789 https://t.me/nft/Collectible-123 12.5 gram"
+        )
+        self.assertIsNotNone(match)
+        self.assertEqual(match.groups(), (None, "123456789", "https://t.me/nft/Collectible-123", "12.5", "gram"))
+        self.assertIsNone(
+            _BUY_RE.fullmatch(".buy @recipient https://t.me/nft/Collectible-123 12.5 gram")
+        )
 
 
 class MarketChatAccessTests(unittest.IsolatedAsyncioTestCase):
@@ -64,6 +82,69 @@ class MarketChatAccessTests(unittest.IsolatedAsyncioTestCase):
         self.bot.get_chat_member.return_value = SimpleNamespace(status=ChatMemberStatus.LEFT)
 
         self.assertFalse(await _user_has_market_access(43, self.bot, self.settings))
+
+
+class BusinessOfferTests(unittest.IsolatedAsyncioTestCase):
+    async def test_business_connection_reads_reply_right_from_rights_object(self) -> None:
+        store = SimpleNamespace(save_business_connection=AsyncMock())
+        connection = SimpleNamespace(
+            id="business-connection-1",
+            user=SimpleNamespace(id=42),
+            user_chat_id=42,
+            is_enabled=True,
+            can_reply=None,
+            rights=SimpleNamespace(can_reply=True),
+        )
+
+        await update_business_connection(connection, store)
+
+        store.save_business_connection.assert_awaited_once_with(
+            connection_id="business-connection-1",
+            business_user_id=42,
+            user_chat_id=42,
+            is_enabled=True,
+            can_reply=True,
+        )
+
+    async def test_offer_is_sent_as_the_creators_business_connection(self) -> None:
+        settings = MarketSettings(
+            market_bot_token="test-token",
+            market_allowed_user_ids="42",
+        )
+        offer = {
+            "id": "abcdef123456",
+            "status": "pending",
+            "price": Decimal("12.5"),
+            "currency": "GRAM",
+            "nft_url": "https://t.me/nft/Collectible-123",
+            "buyer_label": "@creator",
+        }
+        bot = SimpleNamespace(send_message=AsyncMock())
+        store = SimpleNamespace(
+            get_business_connection=AsyncMock(
+                return_value={"id": "business-connection-1"}
+            ),
+            create_offer=AsyncMock(return_value=offer),
+        )
+        message = SimpleNamespace(
+            chat=SimpleNamespace(type=ChatType.PRIVATE),
+            text=".buy 123456789 https://t.me/nft/Collectible-123 12.5 gram",
+            from_user=SimpleNamespace(id=42, username="creator", full_name="Creator"),
+            answer=AsyncMock(),
+        )
+
+        await create_buy_offer(message, bot, store, settings)
+
+        sent = bot.send_message.await_args.kwargs
+        self.assertEqual(sent["chat_id"], 123456789)
+        self.assertEqual(sent["business_connection_id"], "business-connection-1")
+        self.assertIn('emoji-id="5264766603584641330"', sent["text"])
+        self.assertEqual(sent["reply_markup"].inline_keyboard[0][1].callback_data, "qm:a:abcdef123456")
+        self.assertEqual(
+            store.create_offer.await_args.kwargs["recipient_id"],
+            123456789,
+        )
+        message.answer.assert_awaited_once()
 
 
 if __name__ == "__main__":

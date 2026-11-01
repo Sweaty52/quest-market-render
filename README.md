@@ -17,15 +17,28 @@ Create a Render Blueprint from this private repository. The Blueprint starts the
 
 Create the PostgreSQL database in Render, then copy its **internal** database URL into `MARKET_DATABASE_URL` in the web service's Environment settings. Do not commit or share the URL because it contains database credentials. Redeploy after setting it. Local development may use `MARKET_DATABASE_URL=sqlite+aiosqlite:///./data/quest_market.db`.
 
-The `market_offers` and `market_gifts` tables are created safely at startup. Offers and gift records use PostgreSQL in production; the static catalog remains loaded from the project files. Each gift stores the Telegram sender, received time, status, Telegram metadata, and (when determinable) an immutable snapshot of the accepted offer and its creator. Telegram-owned gift IDs and source chat/message IDs are unique, so webhook retries do not create duplicate gift records. If multiple accepted offers match a sender, the bot leaves the gift unlinked rather than guessing.
+The bot creates the `market_offers`, `market_gifts`, and `market_business_connections` tables safely at startup. Offers, gift records, and Telegram Business connections use PostgreSQL in production; the static catalog remains loaded from the project files. Each gift stores the Telegram sender, received time, status, Telegram metadata, and (when determinable) an immutable snapshot of the accepted offer and its creator. Telegram-owned gift IDs and source chat/message IDs are unique, so webhook retries do not create duplicate gift records. If multiple accepted offers match a sender, the bot leaves the gift unlinked rather than guessing.
+
+### Send offers through Telegram Business
+
+Enable Business Mode for the bot in `@BotFather`, then connect it from the Telegram Business account that will send offers and allow it to reply to chats. The connected account needs Telegram Premium for the requested custom emojis. The bot stores Business connection updates and uses the offer creator's own enabled connection; the bot cannot send as a different creator's account.
+
+Create an offer in a private chat with the bot using the recipient's **numeric Telegram user ID**:
+
+```text
+.buy 123456789 https://t.me/nft/Collectible-123 12.5 gram
+.buy 123456789 https://t.me/nft/Collectible-123 500 stars
+```
+
+The recipient must be reachable in the connected Business account's chats and Telegram must permit that account to reply. The Bot API cannot resolve an arbitrary private-chat `@username` to a user ID, so usernames are not accepted as recipients; ask the recipient for their numeric ID (they can obtain their own by sending `/myid` to the bot). If Telegram rejects delivery, the bot reports the failure and does not fall back to inline mode. Existing inline offer messages can still have their buttons processed, but new inline offers are disabled. Disable inline mode in `@BotFather` as well if you want to remove its Telegram UI entry entirely.
 
 Offers created before PostgreSQL is configured were held only in process memory and cannot be migrated; offers created after the database is configured persist across restarts.
 
 ### Register and verify gifts
 
-Only users allowed to use inline offers can register gifts by sending the actual Telegram gift service message to the bot in a private chat; an image or a sticker that merely depicts a gift is not a gift update. Telegram's Bot API exposes different metadata for regular and unique gifts; any unavailable model, symbol, backdrop, or link is left empty rather than inferred. If a single accepted offer cannot be matched, the seller can link it with `/linkgift GIFT_RECORD_ID OFFER_ID`.
+Only users allowed to create offers can register gifts by sending the actual Telegram gift service message to the bot in a private chat; an image or a sticker that merely depicts a gift is not a gift update. Telegram's Bot API exposes different metadata for regular and unique gifts; any unavailable model, symbol, backdrop, or link is left empty rather than inferred. If a single accepted offer cannot be matched, the seller can link it with `/linkgift GIFT_RECORD_ID OFFER_ID`.
 
-Telegram does not provide this bot with a reliable event proving that a gift was transferred from a person's account to the ordinary user account `@questbankk`. The inline “I've transferred” button is only a seller report and does not change the stored gift status. After an admin checks the gift in the bank account, an admin of `OFFERS_GROUP_ID` can use `/pendinggifts` and then `/confirmgift GIFT_RECORD_ID`. Only that explicit group-admin confirmation changes the gift from `received` to `transferred` and queues the group log.
+Telegram does not provide this bot with a reliable event proving that a gift was transferred from a person's account to the ordinary user account `@questbankk`. The “I've transferred” button is only a seller report and does not change the stored gift status. After an admin checks the gift in the bank account, an admin of `OFFERS_GROUP_ID` can use `/pendinggifts` and then `/confirmgift GIFT_RECORD_ID`. Only that explicit group-admin confirmation changes the gift from `received` to `transferred` and queues the group log.
 
 Failed group sends are retained in a database-backed notification queue and retried. Repeated confirmations do not enqueue another notification. Telegram's send-message API has no idempotency key, so a process crash after Telegram accepts a message but before the database records its message ID can exceptionally cause a retry duplicate.
 
