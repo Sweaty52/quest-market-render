@@ -60,7 +60,7 @@ No reliable price source is configured, so notifications show `Немає оці
 
 The bot must be an admin in `MARKET_ACCESS_CHAT_ID` for member checks and an admin with send-message permission in `OFFERS_GROUP_ID` so it can check which group admins may confirm transfers. Admins running `/confirmgift` must be Telegram admins of that exact group.
 
-The `Wake Render` GitHub Actions workflow requests `/health` every five minutes to reduce idle spin-downs on the free Render service. GitHub's scheduled workflows run no more often than every five minutes and may be delayed or skipped. Render may also restart or suspend a free instance, so this is best-effort and does not guarantee 24/7 availability. Reliable always-on operation requires moving the Render web service to a paid plan. GitHub Actions must be enabled for this repository for the scheduled workflow to run.
+Open [https://quest-market.onrender.com](https://quest-market.onrender.com) to request a blank page and wake the Render service. The `Wake Render` GitHub Actions workflow also requests `/health` every five minutes to reduce idle spin-downs on the free Render service. GitHub's scheduled workflows run no more often than every five minutes and may be delayed or skipped. Render may also restart or suspend a free instance, so this is best-effort and does not guarantee 24/7 availability. Reliable always-on operation requires moving the Render web service to a paid plan. GitHub Actions must be enabled for this repository for the scheduled workflow to run.
 
 Offer messages display currency labels as plain text without emoji: `GRAM` or `Stars`.
 

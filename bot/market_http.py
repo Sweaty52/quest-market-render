@@ -18,6 +18,10 @@ async def health(_: web.Request) -> web.Response:
     return web.json_response({"status": "ok"})
 
 
+async def wake_page(_: web.Request) -> web.Response:
+    return web.Response(text="", content_type="text/html")
+
+
 async def telegram_webhook(request: web.Request) -> web.Response:
     settings = request.app[_SETTINGS_KEY]
     if not hmac.compare_digest(
@@ -41,6 +45,7 @@ def create_http_app(settings: MarketSettings, bot: Bot, dispatcher: Dispatcher) 
     app[_SETTINGS_KEY] = settings
     app[_BOT_KEY] = bot
     app[_DISPATCHER_KEY] = dispatcher
+    app.router.add_get("/", wake_page)
     app.router.add_get("/health", health)
     if settings.bot_mode == "webhook":
         app.router.add_post("/telegram/webhook", telegram_webhook)

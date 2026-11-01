@@ -24,8 +24,15 @@ class MarketHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 200)
         self.assertEqual(await response.json(), {"status": "ok"})
 
+    async def test_root_serves_an_empty_wake_page(self) -> None:
+        response = await self.client.get("/")
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(response.content_type, "text/html")
+        self.assertEqual(await response.text(), "")
+
     async def test_web_app_and_catalog_routes_are_removed(self) -> None:
-        for path in ("/", "/api/offers", "/api/catalog"):
+        for path in ("/api/offers", "/api/catalog"):
             with self.subTest(path=path):
                 response = await self.client.get(path)
                 self.assertEqual(response.status, 404)
