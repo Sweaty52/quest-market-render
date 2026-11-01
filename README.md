@@ -29,14 +29,17 @@ Each authorized user can configure their own gift destination in a private chat 
 Create an offer in a private chat with the bot using the recipient's Telegram username or numeric user ID:
 
 ```text
-.buy @username https://t.me/nft/Collectible-123 12.5 gram
-.buy 123456789 https://t.me/nft/Collectible-123 500 stars
+.buy ru @username https://t.me/nft/Collectible-123 12.5 gram
+.buy eng 123456789 https://t.me/nft/Collectible-123 500 stars
+.buy zh @username https://t.me/nft/Collectible-123 500 stars
 ```
+
+The offer recipient sees the offer and its buttons in the selected language: `ru` (Russian), `eng` (English), or `zh` (Chinese). The language tag can also be placed at the end of the command; if omitted, Russian is used. Bot replies, command descriptions, and creator/admin controls are in Russian.
 
 You can avoid entering recipient details by creating a one-time command:
 
 ```text
-.buy https://t.me/nft/Collectible-123 12.5 gram
+.buy ru https://t.me/nft/Collectible-123 12.5 gram
 ```
 
 The bot returns a command such as `.qm <unique-code>`. Paste it into the intended recipient's private chat with the connected Business account. The bot removes the command message after receiving it, then sends the offer with the usual Accept/Decline buttons. The recipient is determined from the private chat ID, not the message sender (which may be the Business account owner for a message sent on their behalf). The Business connection must belong to the offer creator. Codes expire after 24 hours, cannot target the creator, and are consumed once. Do not share the code with anyone except the intended recipient. The Bot API must deliver the pasted command as a Business message; if Telegram does not deliver that update, no offer is created.

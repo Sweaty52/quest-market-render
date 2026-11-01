@@ -264,6 +264,49 @@ class MarketDatabase:
             row = result.mappings().first()
             return dict(row) if row is not None else None
 
+    async def get_business_offer_context(
+        self,
+        *,
+        business_user_id: int,
+        username: str | None = None,
+    ) -> tuple[dict[str, Any] | None, int | None]:
+        normalized_username = username.casefold().lstrip("@") if username else None
+        latest_connection_id = (
+            select(business_connections.c.id)
+            .where(
+                business_connections.c.business_user_id == business_user_id,
+                business_connections.c.is_enabled.is_(True),
+                business_connections.c.can_reply.is_(True),
+            )
+            .order_by(business_connections.c.updated_at.desc())
+            .limit(1)
+            .scalar_subquery()
+        )
+        recipient_join = business_connections.outerjoin(
+            business_recipients,
+            and_(
+                business_recipients.c.connection_id == business_connections.c.id,
+                business_recipients.c.username == normalized_username,
+            ),
+        )
+        async with self.engine.connect() as connection:
+            result = await connection.execute(
+                select(
+                    business_connections,
+                    business_recipients.c.user_id.label("recipient_id"),
+                )
+                .select_from(recipient_join)
+                .where(business_connections.c.id == latest_connection_id)
+            )
+            row = result.mappings().first()
+            if row is None:
+                return None, None
+            business_connection = {
+                column.name: row[column.name]
+                for column in business_connections.columns
+            }
+            return business_connection, row["recipient_id"]
+
     async def set_gift_recipient(self, *, user_id: int, username: str) -> None:
         normalized_username = username.casefold().lstrip("@")
         async with self._user_preference_lock:

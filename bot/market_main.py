@@ -42,16 +42,16 @@ async def main() -> None:
         gift_count = await store.seed_gift_links()
         me = await bot.get_me()
         await bot.set_my_commands([
-            BotCommand(command="start", description="Create Business offers"),
-            BotCommand(command="myid", description="Show your Telegram ID"),
-            BotCommand(command="giftrecipient", description="Set or view your gift recipient"),
-            BotCommand(command="linkgift", description="Link a gift to an accepted offer"),
-            BotCommand(command="pendinggifts", description="List gifts awaiting bank verification"),
-            BotCommand(command="confirmgift", description="Confirm a verified bank transfer"),
+            BotCommand(command="start", description="Начало и создание оферов"),
+            BotCommand(command="myid", description="Показать ваш Telegram ID"),
+            BotCommand(command="giftrecipient", description="Настроить получателя подарков"),
+            BotCommand(command="linkgift", description="Связать подарок с офером"),
+            BotCommand(command="pendinggifts", description="Подарки, ожидающие проверки"),
+            BotCommand(command="confirmgift", description="Подтвердить передачу подарка"),
         ])
         if settings.public_webapp_url:
             await bot.set_chat_menu_button(
-                menu_button=MenuButtonWebApp(text="Quest Market", web_app=WebAppInfo(url=settings.public_webapp_url))
+                menu_button=MenuButtonWebApp(text="Квест Маркет", web_app=WebAppInfo(url=settings.public_webapp_url))
             )
         web_runner = await start_web_app(settings, store, bot, dispatcher)
         log.info(

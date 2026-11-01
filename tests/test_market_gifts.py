@@ -132,6 +132,18 @@ class GiftDatabaseTests(unittest.IsolatedAsyncioTestCase):
         connection = await self.store.get_business_connection(900)
         self.assertIsNotNone(connection)
         self.assertEqual(connection["id"], "business-connection-1")
+        offer_connection, recipient_id = await self.store.get_business_offer_context(
+            business_user_id=900,
+            username="@KNOWNBUYER",
+        )
+        self.assertEqual(offer_connection["id"], "business-connection-1")
+        self.assertEqual(recipient_id, 901)
+        unknown_connection, unknown_recipient = await self.store.get_business_offer_context(
+            business_user_id=900,
+            username="unknown",
+        )
+        self.assertEqual(unknown_connection["id"], "business-connection-1")
+        self.assertIsNone(unknown_recipient)
         self.assertEqual(
             await self.store.resolve_business_recipient(
                 connection_id="business-connection-1",
@@ -148,6 +160,12 @@ class GiftDatabaseTests(unittest.IsolatedAsyncioTestCase):
             can_reply=False,
         )
         self.assertIsNone(await self.store.get_business_connection(900))
+        disabled_connection, disabled_recipient = await self.store.get_business_offer_context(
+            business_user_id=900,
+            username="knownbuyer",
+        )
+        self.assertIsNone(disabled_connection)
+        self.assertIsNone(disabled_recipient)
         self.assertIsNone(
             await self.store.resolve_business_recipient(
                 connection_id="business-connection-1",

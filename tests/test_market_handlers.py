@@ -1,3 +1,4 @@
+import asyncio
 import unittest
 from decimal import Decimal
 from types import SimpleNamespace
@@ -8,11 +9,13 @@ from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 
 from bot.config import MarketSettings
 from bot.market_handlers import (
+    _BUY_DRAFT_RE,
     _BUY_RE,
     _delete_business_command,
     _edit_offer_message,
     _gift_recipient_url,
     _offer_text,
+    _pending_keyboard,
     _user_has_market_access,
     configure_gift_recipient,
     create_buy_offer,
@@ -38,6 +41,22 @@ class OfferCurrencyLabelTests(unittest.TestCase):
                 self.assertIn(f"500 {label}", text)
                 self.assertNotIn("⭐", text)
                 self.assertNotIn("<tg-emoji", text)
+
+    def test_offer_text_is_translated_for_russian_english_and_chinese(self) -> None:
+        expected = {
+            "ru": ("предлагает вам", "Принять", "Отклонить"),
+            "en": ("offers you", "Accept", "Decline"),
+            "zh": ("向你发出报价", "接受", "拒绝"),
+        }
+        for language, (message, accept, decline) in expected.items():
+            with self.subTest(language=language):
+                offer = {**self.offer, "currency": "STARS", "language": language}
+                text = _offer_text(offer)
+                keyboard = _pending_keyboard("abcdef123456", language)
+
+                self.assertIn(message, text)
+                self.assertEqual(keyboard.inline_keyboard[0][0].text, decline)
+                self.assertEqual(keyboard.inline_keyboard[0][1].text, accept)
 
     def test_business_offer_uses_the_configured_custom_emoji(self) -> None:
         expected_ids = {
@@ -71,12 +90,32 @@ class OfferCurrencyLabelTests(unittest.TestCase):
             ".buy @some_user https://t.me/nft/Collectible-123 12.5 gram"
         )
         self.assertIsNotNone(match)
-        self.assertEqual(match.groups(), (None, "@some_user", "https://t.me/nft/Collectible-123", "12.5", "gram"))
+        self.assertEqual(
+            match.groups(),
+            (
+                None,
+                None,
+                "@some_user",
+                "https://t.me/nft/Collectible-123",
+                "12.5",
+                "gram",
+                None,
+            ),
+        )
         self.assertIsNotNone(
             _BUY_RE.fullmatch(".buy 123456789 https://t.me/nft/Collectible-123 12.5 gram")
         )
         self.assertIsNone(
             _BUY_RE.fullmatch(".buy @bad!name https://t.me/nft/Collectible-123 12.5 gram")
+        )
+        self.assertIsNotNone(
+            _BUY_RE.fullmatch(".buy zh @some_user https://t.me/nft/Collectible-123 12.5 gram")
+        )
+        self.assertIsNotNone(
+            _BUY_RE.fullmatch(".buy @some_user https://t.me/nft/Collectible-123 12.5 gram eng")
+        )
+        self.assertIsNotNone(
+            _BUY_DRAFT_RE.fullmatch(".buy ru https://t.me/nft/Collectible-123 12.5 gram")
         )
 
 
@@ -190,7 +229,7 @@ class BusinessOfferTests(unittest.IsolatedAsyncioTestCase):
         await configure_gift_recipient(message, SimpleNamespace(), store, settings)
 
         store.set_gift_recipient.assert_not_awaited()
-        self.assertIn("Usage:", message.answer.await_args.args[0])
+        self.assertIn("Формат:", message.answer.await_args.args[0])
 
     async def test_business_code_message_is_deleted_before_claiming(self) -> None:
         bot = SimpleNamespace(
@@ -269,20 +308,20 @@ class BusinessOfferTests(unittest.IsolatedAsyncioTestCase):
             "status": "pending",
             "price": Decimal("12.5"),
             "currency": "GRAM",
+            "language": "zh",
             "nft_url": "https://t.me/nft/Collectible-123",
             "buyer_label": "@creator",
         }
         bot = SimpleNamespace(send_message=AsyncMock())
         store = SimpleNamespace(
-            get_business_connection=AsyncMock(
-                return_value={"id": "business-connection-1"}
+            get_business_offer_context=AsyncMock(
+                return_value=({"id": "business-connection-1"}, 123456789)
             ),
-            resolve_business_recipient=AsyncMock(return_value=123456789),
             create_offer=AsyncMock(return_value=offer),
         )
         message = SimpleNamespace(
             chat=SimpleNamespace(type=ChatType.PRIVATE),
-            text=".buy @some_user https://t.me/nft/Collectible-123 12.5 gram",
+            text=".buy zh @some_user https://t.me/nft/Collectible-123 12.5 gram",
             from_user=SimpleNamespace(id=42, username="creator", full_name="Creator"),
             answer=AsyncMock(),
         )
@@ -293,16 +332,70 @@ class BusinessOfferTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sent["chat_id"], 123456789)
         self.assertEqual(sent["business_connection_id"], "business-connection-1")
         self.assertIn('emoji-id="5264766603584641330"', sent["text"])
+        self.assertIn("向你发出报价", sent["text"])
+        self.assertEqual(sent["reply_markup"].inline_keyboard[0][1].text, "接受")
         self.assertEqual(sent["reply_markup"].inline_keyboard[0][1].callback_data, "qm:a:abcdef123456")
         self.assertEqual(
             store.create_offer.await_args.kwargs["recipient_id"],
             123456789,
         )
-        store.resolve_business_recipient.assert_awaited_once_with(
-            connection_id="business-connection-1",
+        self.assertEqual(store.create_offer.await_args.kwargs["language"], "zh")
+        store.get_business_offer_context.assert_awaited_once_with(
+            business_user_id=42,
             username="some_user",
         )
         message.answer.assert_awaited_once()
+
+    async def test_offer_access_and_business_context_checks_run_concurrently(self) -> None:
+        settings = MarketSettings(
+            market_bot_token="test-token",
+            market_access_chat_id=-1004447182501,
+        )
+        both_started = asyncio.Event()
+        started: set[str] = set()
+
+        async def wait_for_both(name: str) -> None:
+            started.add(name)
+            if len(started) == 2:
+                both_started.set()
+            await asyncio.wait_for(both_started.wait(), timeout=0.5)
+
+        async def check_membership(*_: object) -> SimpleNamespace:
+            await wait_for_both("membership")
+            return SimpleNamespace(status=ChatMemberStatus.MEMBER)
+
+        async def get_offer_context(**_: object) -> tuple[dict, None]:
+            await wait_for_both("database")
+            return {"id": "business-connection-1"}, None
+
+        bot = SimpleNamespace(
+            get_chat_member=AsyncMock(side_effect=check_membership),
+            send_message=AsyncMock(),
+        )
+        store = SimpleNamespace(
+            get_business_offer_context=AsyncMock(side_effect=get_offer_context),
+            create_offer=AsyncMock(return_value={
+                "id": "abcdef123456",
+                "status": "pending",
+                "price": Decimal("12.5"),
+                "currency": "GRAM",
+                "language": "ru",
+                "nft_url": "https://t.me/nft/Collectible-123",
+                "buyer_label": "@creator",
+            }),
+        )
+        message = SimpleNamespace(
+            chat=SimpleNamespace(type=ChatType.PRIVATE),
+            text=".buy 123456 https://t.me/nft/Collectible-123 12.5 gram",
+            from_user=SimpleNamespace(id=42, username="creator", full_name="Creator"),
+            answer=AsyncMock(),
+        )
+
+        await create_buy_offer(message, bot, store, settings)
+
+        self.assertEqual(started, {"membership", "database"})
+        store.create_offer.assert_awaited_once()
+        bot.send_message.assert_awaited_once()
 
     async def test_unknown_username_does_not_create_an_offer(self) -> None:
         settings = MarketSettings(
@@ -315,8 +408,9 @@ class BusinessOfferTests(unittest.IsolatedAsyncioTestCase):
             delete_business_messages=AsyncMock(),
         )
         store = SimpleNamespace(
-            get_business_connection=AsyncMock(return_value={"id": "business-connection-1"}),
-            resolve_business_recipient=AsyncMock(return_value=None),
+            get_business_offer_context=AsyncMock(
+                return_value=({"id": "business-connection-1"}, None)
+            ),
             create_offer=AsyncMock(),
         )
         message = SimpleNamespace(
@@ -338,7 +432,9 @@ class BusinessOfferTests(unittest.IsolatedAsyncioTestCase):
             market_allowed_user_ids="42",
         )
         store = SimpleNamespace(
-            get_business_connection=AsyncMock(return_value={"id": "business-connection-1"}),
+            get_business_offer_context=AsyncMock(
+                return_value=({"id": "business-connection-1"}, None)
+            ),
             create_offer_token=AsyncMock(return_value="0123456789abcdef"),
         )
         message = SimpleNamespace(
@@ -357,7 +453,7 @@ class BusinessOfferTests(unittest.IsolatedAsyncioTestCase):
             nft_url="https://t.me/nft/Collectible-123",
             price=Decimal("12.5"),
             currency="GRAM",
-            language="en",
+            language="ru",
         )
         self.assertIn(".qm 0123456789abcdef", message.answer.await_args.args[0])
 
