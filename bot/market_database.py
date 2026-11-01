@@ -88,6 +88,14 @@ business_recipients = Table(
     Index("ix_market_business_recipients_user", "connection_id", "user_id"),
 )
 
+user_preferences = Table(
+    "market_user_preferences",
+    _metadata,
+    Column("user_id", BigInteger, primary_key=True),
+    Column("gift_recipient_username", String(32), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+)
+
 offer_tokens = Table(
     "market_offer_tokens",
     _metadata,
@@ -203,6 +211,7 @@ class MarketDatabase:
         self._notification_lock = asyncio.Lock()
         self._business_connection_lock = asyncio.Lock()
         self._business_recipient_lock = asyncio.Lock()
+        self._user_preference_lock = asyncio.Lock()
 
     async def initialize(self) -> None:
         async with self.engine.begin() as connection:
@@ -254,6 +263,35 @@ class MarketDatabase:
             )
             row = result.mappings().first()
             return dict(row) if row is not None else None
+
+    async def set_gift_recipient(self, *, user_id: int, username: str) -> None:
+        normalized_username = username.casefold().lstrip("@")
+        async with self._user_preference_lock:
+            async with self.engine.begin() as connection:
+                updated = await connection.execute(
+                    update(user_preferences)
+                    .where(user_preferences.c.user_id == user_id)
+                    .values(
+                        gift_recipient_username=normalized_username,
+                        updated_at=datetime.now(timezone.utc),
+                    )
+                )
+                if updated.rowcount == 0:
+                    await connection.execute(
+                        insert(user_preferences).values(
+                            user_id=user_id,
+                            gift_recipient_username=normalized_username,
+                            updated_at=datetime.now(timezone.utc),
+                        )
+                    )
+
+    async def get_gift_recipient(self, user_id: int) -> str | None:
+        async with self.engine.connect() as connection:
+            return await connection.scalar(
+                select(user_preferences.c.gift_recipient_username).where(
+                    user_preferences.c.user_id == user_id
+                )
+            )
 
     async def record_business_recipient(
         self,

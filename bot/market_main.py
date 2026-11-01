@@ -44,6 +44,7 @@ async def main() -> None:
         await bot.set_my_commands([
             BotCommand(command="start", description="Create Business offers"),
             BotCommand(command="myid", description="Show your Telegram ID"),
+            BotCommand(command="giftrecipient", description="Set or view your gift recipient"),
             BotCommand(command="linkgift", description="Link a gift to an accepted offer"),
             BotCommand(command="pendinggifts", description="List gifts awaiting bank verification"),
             BotCommand(command="confirmgift", description="Confirm a verified bank transfer"),

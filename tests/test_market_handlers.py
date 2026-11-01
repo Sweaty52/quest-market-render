@@ -10,8 +10,11 @@ from bot.config import MarketSettings
 from bot.market_handlers import (
     _BUY_RE,
     _delete_business_command,
+    _edit_offer_message,
+    _gift_recipient_url,
     _offer_text,
     _user_has_market_access,
+    configure_gift_recipient,
     create_buy_offer,
     remember_business_recipient,
     update_business_connection,
@@ -50,6 +53,18 @@ class OfferCurrencyLabelTests(unittest.TestCase):
 
                 self.assertIn(f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>', text)
                 self.assertNotIn(f"500 {label}", text)
+
+    def test_personal_gift_recipient_builds_telegram_send_gift_link(self) -> None:
+        settings = MarketSettings(market_bot_token="test-token")
+
+        self.assertEqual(
+            _gift_recipient_url("chosen_account", settings),
+            "tg://send_gift?to=chosen_account",
+        )
+        self.assertEqual(
+            _gift_recipient_url(None, settings),
+            settings.market_account_url,
+        )
 
     def test_buy_command_accepts_a_username_or_numeric_recipient_id(self) -> None:
         match = _BUY_RE.fullmatch(
@@ -91,6 +106,92 @@ class MarketChatAccessTests(unittest.IsolatedAsyncioTestCase):
 
 
 class BusinessOfferTests(unittest.IsolatedAsyncioTestCase):
+    async def test_authorized_user_can_set_gift_recipient(self) -> None:
+        settings = MarketSettings(
+            market_bot_token="test-token",
+            market_allowed_user_ids="42",
+        )
+        store = SimpleNamespace(set_gift_recipient=AsyncMock())
+        message = SimpleNamespace(
+            chat=SimpleNamespace(type=ChatType.PRIVATE),
+            text="/giftrecipient @chosen_account",
+            from_user=SimpleNamespace(id=42, username="user"),
+            answer=AsyncMock(),
+        )
+
+        await configure_gift_recipient(message, SimpleNamespace(), store, settings)
+
+        store.set_gift_recipient.assert_awaited_once_with(
+            user_id=42,
+            username="@chosen_account",
+        )
+        self.assertIn("@chosen_account", message.answer.await_args.args[0])
+
+    async def test_accepted_offer_uses_creator_personal_gift_recipient(self) -> None:
+        settings = MarketSettings(market_bot_token="test-token")
+        offer = {
+            "id": "abcdef123456",
+            "buyer_id": 42,
+            "status": "accepted",
+            "price": Decimal("12.5"),
+            "currency": "GRAM",
+            "nft_url": "https://t.me/nft/Collectible-123",
+            "buyer_label": "@creator",
+        }
+        bot = SimpleNamespace(edit_message_text=AsyncMock())
+        query = SimpleNamespace(
+            bot=bot,
+            inline_message_id="inline-message-id",
+            message=None,
+        )
+        store = SimpleNamespace(get_gift_recipient=AsyncMock(return_value="chosen_account"))
+
+        await _edit_offer_message(query, offer, settings, store)
+
+        store.get_gift_recipient.assert_awaited_once_with(42)
+        markup = bot.edit_message_text.await_args.kwargs["reply_markup"]
+        self.assertEqual(markup.inline_keyboard[0][0].url, "tg://send_gift?to=chosen_account")
+
+    async def test_unauthorized_user_cannot_set_gift_recipient(self) -> None:
+        settings = MarketSettings(
+            market_bot_token="test-token",
+            market_allowed_user_ids="42",
+            market_access_chat_id=-1004447182501,
+        )
+        bot = SimpleNamespace(
+            get_chat_member=AsyncMock(return_value=SimpleNamespace(status=ChatMemberStatus.LEFT))
+        )
+        store = SimpleNamespace(set_gift_recipient=AsyncMock())
+        message = SimpleNamespace(
+            chat=SimpleNamespace(type=ChatType.PRIVATE),
+            text="/giftrecipient @chosen_account",
+            from_user=SimpleNamespace(id=43, username="user"),
+            answer=AsyncMock(),
+        )
+
+        await configure_gift_recipient(message, bot, store, settings)
+
+        store.set_gift_recipient.assert_not_awaited()
+        message.answer.assert_awaited_once()
+
+    async def test_invalid_gift_recipient_username_is_rejected(self) -> None:
+        settings = MarketSettings(
+            market_bot_token="test-token",
+            market_allowed_user_ids="42",
+        )
+        store = SimpleNamespace(set_gift_recipient=AsyncMock())
+        message = SimpleNamespace(
+            chat=SimpleNamespace(type=ChatType.PRIVATE),
+            text="/giftrecipient @bad!name",
+            from_user=SimpleNamespace(id=42, username="user"),
+            answer=AsyncMock(),
+        )
+
+        await configure_gift_recipient(message, SimpleNamespace(), store, settings)
+
+        store.set_gift_recipient.assert_not_awaited()
+        self.assertIn("Usage:", message.answer.await_args.args[0])
+
     async def test_business_code_message_is_deleted_before_claiming(self) -> None:
         bot = SimpleNamespace(
             delete_message=AsyncMock(return_value=True),

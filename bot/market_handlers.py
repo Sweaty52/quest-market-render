@@ -166,7 +166,7 @@ def _offer_text(
     first = f"<b>User {buyer_label} offers you</b>"
     pending = f"<b>{price} {currency}</b> for the gift {gift_link}.\n\nOffer expires in {hours_left} hour{'s' if hours_left != 1 else ''}."
     statuses = {
-        "accepted": "\n<b>Offer accepted.</b> Transfer the gift to Quest Market (@questbankk), then tap “I've transferred”.",
+        "accepted": "\n<b>Offer accepted.</b> Transfer the gift to the account configured by the offer creator, then tap “I've transferred”.",
         "rejected": "\nThe seller declined this offer.",
         "gift_sent": "\nThe seller reported the transfer. It is not complete until an admin verifies receipt in the bank account.",
     }
@@ -194,11 +194,18 @@ def _accepted_keyboard(offer_id: str, transfer_url: str = "") -> InlineKeyboardM
     ])
 
 
-def _current_keyboard(offer: dict, settings: MarketSettings) -> InlineKeyboardMarkup | None:
+def _current_keyboard(
+    offer: dict,
+    settings: MarketSettings,
+    transfer_url: str | None = None,
+) -> InlineKeyboardMarkup | None:
     if offer["status"] == "pending":
         return _pending_keyboard(offer["id"])
     if offer["status"] == "accepted":
-        return _accepted_keyboard(offer["id"], settings.market_account_url)
+        return _accepted_keyboard(
+            offer["id"],
+            transfer_url if transfer_url is not None else settings.market_account_url,
+        )
     return InlineKeyboardMarkup(inline_keyboard=[])
 
 
@@ -206,6 +213,53 @@ def _current_keyboard(offer: dict, settings: MarketSettings) -> InlineKeyboardMa
 async def show_user_id(message: Message) -> None:
     if message.from_user:
         await message.answer(f"Your Telegram ID: <code>{message.from_user.id}</code>", parse_mode="HTML")
+
+
+def _gift_recipient_url(username: str | None, settings: MarketSettings) -> str:
+    if not username:
+        return settings.market_account_url
+    return f"tg://send_gift?to={quote(username, safe='')}"
+
+
+@router.message(Command("giftrecipient"))
+async def configure_gift_recipient(
+    message: Message,
+    bot: Bot,
+    store: MarketStore,
+    settings: MarketSettings,
+) -> None:
+    user = message.from_user
+    if message.chat.type != ChatType.PRIVATE or user is None:
+        return
+    if not await _user_has_market_access(user.id, bot, settings):
+        await message.answer("This setting is available only to authorized Quest Market users.")
+        return
+
+    parts = (message.text or "").split()
+    if len(parts) == 1:
+        username = await store.get_gift_recipient(user.id)
+        if username:
+            await message.answer(f"Gift recipient: <code>@{escape(username)}</code>", parse_mode="HTML")
+        else:
+            await message.answer(
+                "No personal gift recipient set. Offers use the default configured account. "
+                "Set one with <code>/giftrecipient @username</code>.",
+                parse_mode="HTML",
+            )
+        return
+    if len(parts) != 2 or not _TARGET_USERNAME_RE.fullmatch(parts[1]):
+        await message.answer(
+            "Usage: <code>/giftrecipient @username</code> using a valid Telegram username.",
+            parse_mode="HTML",
+        )
+        return
+
+    await store.set_gift_recipient(user_id=user.id, username=parts[1])
+    await message.answer(
+        f"Gift recipient saved as <code>{escape(parts[1])}</code>. "
+        "The Transfer gift button in your offers will open this account.",
+        parse_mode="HTML",
+    )
 
 
 def _gift_details(message: Message) -> dict:
@@ -411,7 +465,9 @@ async def start(message: Message, bot: Bot, settings: MarketSettings) -> None:
             "<code>.buy https://t.me/nft/Collectible-123 12.5 gram</code>\n\n"
             "The recipient must have messaged your connected Business account so the bot can resolve "
             "their username. A one-time code instead identifies the recipient from the Business chat "
-            "where the code is used."
+            "where the code is used.\n\n"
+            "Set your gift destination with <code>/giftrecipient @username</code>; "
+            "check it with <code>/giftrecipient</code>."
         )
         await message.answer(text, parse_mode="HTML")
     elif settings.public_webapp_url:
@@ -739,13 +795,18 @@ async def confirm_gift(
     )
 
 
-async def _edit_inline_message(query: CallbackQuery, offer: dict, settings: MarketSettings) -> None:
+async def _edit_inline_message(
+    query: CallbackQuery,
+    offer: dict,
+    settings: MarketSettings,
+    transfer_url: str | None = None,
+) -> None:
     if not query.inline_message_id:
         return
     await query.bot.edit_message_text(
         inline_message_id=query.inline_message_id,
         text=_offer_text(offer),
-        reply_markup=_current_keyboard(offer, settings),
+        reply_markup=_current_keyboard(offer, settings, transfer_url),
         parse_mode="HTML",
         link_preview_options=LinkPreviewOptions(
             is_disabled=False,
@@ -756,9 +817,16 @@ async def _edit_inline_message(query: CallbackQuery, offer: dict, settings: Mark
     )
 
 
-async def _edit_offer_message(query: CallbackQuery, offer: dict, settings: MarketSettings) -> None:
+async def _edit_offer_message(
+    query: CallbackQuery,
+    offer: dict,
+    settings: MarketSettings,
+    store: MarketStore,
+) -> None:
+    recipient_username = await store.get_gift_recipient(offer["buyer_id"])
+    transfer_url = _gift_recipient_url(recipient_username, settings)
     if query.inline_message_id:
-        await _edit_inline_message(query, offer, settings)
+        await _edit_inline_message(query, offer, settings, transfer_url)
         return
     if not isinstance(query.message, Message):
         return
@@ -769,7 +837,7 @@ async def _edit_offer_message(query: CallbackQuery, offer: dict, settings: Marke
         message_id=query.message.message_id,
         business_connection_id=business_connection_id,
         text=_offer_text(offer, use_business_emojis=bool(business_connection_id)),
-        reply_markup=_current_keyboard(offer, settings),
+        reply_markup=_current_keyboard(offer, settings, transfer_url),
         parse_mode="HTML",
         link_preview_options=LinkPreviewOptions(
             is_disabled=False,
@@ -790,8 +858,15 @@ async def offer_action(query: CallbackQuery, store: MarketStore, settings: Marke
     user_id = query.from_user.id
 
     if action == "h":
+        offer = await store.get_offer(offer_id)
+        creator_username = (
+            await store.get_gift_recipient(offer["buyer_id"])
+            if offer is not None
+            else None
+        )
+        recipient = f"@{creator_username}" if creator_username else "the account configured by the offer creator"
         await query.answer(
-            "Transfer the collectible to Quest Market (@questbankk), then tap “I've transferred”. Only confirm after the transfer is complete.",
+            f"Transfer the collectible to {recipient}, then tap “I've transferred”. Only confirm after the transfer is complete.",
             show_alert=True,
         )
         return
@@ -815,7 +890,7 @@ async def offer_action(query: CallbackQuery, store: MarketStore, settings: Marke
 
     if offer:
         try:
-            await _edit_offer_message(query, offer, settings)
+            await _edit_offer_message(query, offer, settings, store)
         except TelegramAPIError:
             log.exception("Could not update Telegram message for offer %s", offer_id)
             await query.answer(

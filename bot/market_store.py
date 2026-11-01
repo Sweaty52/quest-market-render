@@ -44,6 +44,12 @@ class MarketStore:
     async def get_business_connection(self, business_user_id: int) -> dict[str, Any] | None:
         return await self.database.get_business_connection(business_user_id)
 
+    async def set_gift_recipient(self, *, user_id: int, username: str) -> None:
+        await self.database.set_gift_recipient(user_id=user_id, username=username)
+
+    async def get_gift_recipient(self, user_id: int) -> str | None:
+        return await self.database.get_gift_recipient(user_id)
+
     async def record_business_recipient(
         self,
         *,

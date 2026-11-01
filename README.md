@@ -11,17 +11,20 @@ Create a Render Blueprint from this private repository. The Blueprint starts the
 - `MARKET_DATABASE_URL` — internal connection URL for a Render PostgreSQL database. The bot refuses to start on Render with SQLite because the service filesystem is not persistent.
 - `MARKET_ALLOWED_USER_IDS` — optional comma-separated Telegram IDs that always have access.
 - `MARKET_ACCESS_CHAT_ID` — Telegram chat whose members can create and publish offers; the bot must be an administrator there.
+- `MARKET_ACCOUNT_URL` — fallback `tg://send_gift` link for users who have not set a personal gift destination.
 - `BANK_USERNAME` — receiving bank account username, without `@` (default: `questbankk`).
 - `OFFERS_GROUP_ID` — Telegram group ID used for gift verification and transfer notifications.
 - `GIFT_NOTIFICATION_RETRY_SECONDS` — retry interval for failed group notifications (default: `60`).
 
 Create the PostgreSQL database in Render, then copy its **internal** database URL into `MARKET_DATABASE_URL` in the web service's Environment settings. Do not commit or share the URL because it contains database credentials. Redeploy after setting it. Local development may use `MARKET_DATABASE_URL=sqlite+aiosqlite:///./data/quest_market.db`.
 
-The bot creates the `market_offers`, `market_offer_tokens`, `market_gifts`, `market_business_connections`, and `market_business_recipients` tables safely at startup. Offers, one-time offer codes, gift records, and Telegram Business connections use PostgreSQL in production; the static catalog remains loaded from the project files. Each gift stores the Telegram sender, received time, status, Telegram metadata, and (when determinable) an immutable snapshot of the accepted offer and its creator. Telegram-owned gift IDs and source chat/message IDs are unique, so webhook retries do not create duplicate gift records. If multiple accepted offers match a sender, the bot leaves the gift unlinked rather than guessing.
+The bot creates the `market_offers`, `market_offer_tokens`, `market_gifts`, `market_business_connections`, `market_business_recipients`, and `market_user_preferences` tables safely at startup. Offers, one-time offer codes, per-user gift-recipient preferences, gift records, and Telegram Business connections use PostgreSQL in production; the static catalog remains loaded from the project files. Each gift stores the Telegram sender, received time, status, Telegram metadata, and (when determinable) an immutable snapshot of the accepted offer and its creator. Telegram-owned gift IDs and source chat/message IDs are unique, so webhook retries do not create duplicate gift records. If multiple accepted offers match a sender, the bot leaves the gift unlinked rather than guessing.
 
 ### Send offers through Telegram Business
 
 Enable Business Mode for the bot in `@BotFather`, then connect it from the Telegram Business account that will send offers and allow it to reply to chats. The connected account needs Telegram Premium for the requested custom emojis. The bot stores Business connection updates and uses the offer creator's own enabled connection; the bot cannot send as a different creator's account.
+
+Each authorized user can configure their own gift destination in a private chat with the bot using `/giftrecipient @username`. Use `/giftrecipient` to view the saved account. This sets the recipient opened by the **Transfer gift** button on that user's accepted offers; it does not automatically transfer a gift. If no personal recipient is configured, the existing `MARKET_ACCOUNT_URL` default (`tg://send_gift?to=questbankk`) is used. The destination preference is saved per Telegram user and survives restarts.
 
 Create an offer in a private chat with the bot using the recipient's Telegram username or numeric user ID:
 

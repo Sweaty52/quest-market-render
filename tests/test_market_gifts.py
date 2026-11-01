@@ -155,6 +155,19 @@ class GiftDatabaseTests(unittest.IsolatedAsyncioTestCase):
             )
         )
 
+    async def test_gift_recipient_preference_survives_restart_and_updates(self) -> None:
+        await self.store.set_gift_recipient(user_id=900, username="@QuestBank")
+        self.assertEqual(await self.store.get_gift_recipient(900), "questbank")
+        self.assertIsNone(await self.store.get_gift_recipient(901))
+
+        await self.store.close()
+        self.store = MarketStore(self.database_url)
+        await self.store.initialize()
+
+        self.assertEqual(await self.store.get_gift_recipient(900), "questbank")
+        await self.store.set_gift_recipient(user_id=900, username="NewBank")
+        self.assertEqual(await self.store.get_gift_recipient(900), "newbank")
+
     async def test_offer_token_is_connection_bound_and_can_only_be_claimed_once(self) -> None:
         await self.store.save_business_connection(
             connection_id="business-connection-1",
