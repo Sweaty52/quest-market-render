@@ -32,8 +32,10 @@ router = Router(name="quest-market")
 _PRICE_RE = re.compile(r"^(?:0|[1-9]\d{0,20})(?:[.,]\d{1,9})?$")
 _STARS_PRICE_RE = re.compile(r"^[1-9]\d{0,20}$")
 _OFFER_ID_RE = re.compile(r"^[0-9a-f]{12}$")
+_TARGET_USERNAME_RE = re.compile(r"^@[A-Za-z][A-Za-z0-9_]{4,31}$")
+_TARGET_RE = re.compile(r"(?:@[A-Za-z][A-Za-z0-9_]{4,31}|[1-9]\d{0,15})")
 _BUY_RE = re.compile(
-    r"^(?:\.buy|/buy)\s+(?:eng\s+)?(?:(gram|grams|star|stars)\s+)?([1-9]\d{0,15})\s+(\S+)\s+(\S+)(?:\s+(gram|grams|star|stars))?\s*$",
+    rf"^(?:\.buy|/buy)\s+(?:eng\s+)?(?:(gram|grams|star|stars)\s+)?({_TARGET_RE.pattern})\s+(\S+)\s+(\S+)(?:\s+(gram|grams|star|stars))?\s*$",
     re.IGNORECASE,
 )
 _GRAM_CUSTOM_EMOJI_ID = "5264766603584641330"
@@ -218,6 +220,27 @@ async def update_business_connection(
     )
 
 
+@router.business_message()
+async def remember_business_recipient(message: Message, store: MarketStore) -> None:
+    if (
+        message.chat.type != ChatType.PRIVATE
+        or not message.business_connection_id
+        or message.from_user is None
+        or not message.from_user.username
+    ):
+        return
+    recorded = await store.record_business_recipient(
+        connection_id=message.business_connection_id,
+        username=message.from_user.username,
+        user_id=message.from_user.id,
+    )
+    if recorded:
+        log.info(
+            "Observed recipient @%s through a Business chat",
+            message.from_user.username,
+        )
+
+
 @router.message(F.gift | F.unique_gift)
 async def receive_gift(message: Message, bot: Bot, store: MarketStore, settings: MarketSettings) -> None:
     if message.chat.type != ChatType.PRIVATE:
@@ -274,10 +297,10 @@ async def start(message: Message, bot: Bot, settings: MarketSettings) -> None:
         text = (
             f"Hello, {name}! Welcome to <b>Quest Market</b>.\n\n"
             "Send an offer through your connected Telegram Business account:\n"
-            "<code>.buy 123456789 https://t.me/nft/Collectible-123 12.5 gram</code>\n"
-            "<code>.buy 123456789 https://t.me/nft/Collectible-123 500 stars</code>\n\n"
-            "Replace <code>123456789</code> with the recipient's numeric Telegram ID. "
-            "The recipient must be reachable through your Business account."
+            "<code>.buy @username https://t.me/nft/Collectible-123 12.5 gram</code>\n"
+            "<code>.buy @username https://t.me/nft/Collectible-123 500 stars</code>\n\n"
+            "The recipient must have messaged your connected Business account so the bot can resolve "
+            "their username. You can also use their numeric Telegram ID."
         )
         await message.answer(text, parse_mode="HTML")
     elif settings.public_webapp_url:
@@ -327,15 +350,27 @@ async def create_buy_offer(
     match = _BUY_RE.fullmatch(text.strip())
     if not match:
         await message.answer(
-            "Format: <code>.buy RECIPIENT_ID https://t.me/nft/Collectible-123 12.5 gram</code> "
-            "or <code>.buy RECIPIENT_ID https://t.me/nft/Collectible-123 500 stars</code>.",
+            "Format: <code>.buy @username https://t.me/nft/Collectible-123 12.5 gram</code> "
+            "or <code>.buy 123456789 https://t.me/nft/Collectible-123 500 stars</code>.",
             parse_mode="HTML",
         )
         return
 
-    prefix_currency, target_id_text, nft_url, raw_price, suffix_currency = match.groups()
-    target_user_id = int(target_id_text)
-    if target_user_id > 2**52 - 1:
+    prefix_currency, target_text, nft_url, raw_price, suffix_currency = match.groups()
+    if target_text.startswith("@"):
+        if not _TARGET_USERNAME_RE.fullmatch(target_text):
+            await message.answer("Recipient must be a valid Telegram username such as <code>@username</code>.", parse_mode="HTML")
+            return
+        target_user_id = None
+    elif target_text.isdecimal():
+        target_user_id = int(target_text)
+    else:
+        await message.answer(
+            "Recipient must be a Telegram username such as <code>@username</code> or a numeric user ID.",
+            parse_mode="HTML",
+        )
+        return
+    if target_user_id is not None and target_user_id > 2**52 - 1:
         await message.answer("Recipient ID is outside Telegram's supported range.")
         return
     if prefix_currency and suffix_currency:
@@ -381,6 +416,19 @@ async def create_buy_offer(
             "before sending business offers."
         )
         return
+
+    if target_user_id is None:
+        target_user_id = await store.resolve_business_recipient(
+            connection_id=business_connection["id"],
+            username=target_text[1:],
+        )
+        if target_user_id is None:
+            await message.answer(
+                f"I don't know <code>{escape(target_text)}</code> from your Business chats yet. "
+                "Ask them to message your connected Business account first, then retry the offer.",
+                parse_mode="HTML",
+            )
+            return
 
     buyer_label = f"@{user.username}" if user.username else user.full_name
     offer = await store.create_offer(

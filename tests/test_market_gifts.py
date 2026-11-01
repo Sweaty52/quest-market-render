@@ -120,6 +120,11 @@ class GiftDatabaseTests(unittest.IsolatedAsyncioTestCase):
             is_enabled=True,
             can_reply=True,
         )
+        await self.store.record_business_recipient(
+            connection_id="business-connection-1",
+            username="KnownBuyer",
+            user_id=901,
+        )
         await self.store.close()
         self.store = MarketStore(self.database_url)
         await self.store.initialize()
@@ -127,6 +132,13 @@ class GiftDatabaseTests(unittest.IsolatedAsyncioTestCase):
         connection = await self.store.get_business_connection(900)
         self.assertIsNotNone(connection)
         self.assertEqual(connection["id"], "business-connection-1")
+        self.assertEqual(
+            await self.store.resolve_business_recipient(
+                connection_id="business-connection-1",
+                username="@knownbuyer",
+            ),
+            901,
+        )
 
         await self.store.save_business_connection(
             connection_id="business-connection-1",
@@ -136,6 +148,21 @@ class GiftDatabaseTests(unittest.IsolatedAsyncioTestCase):
             can_reply=False,
         )
         self.assertIsNone(await self.store.get_business_connection(900))
+        self.assertIsNone(
+            await self.store.resolve_business_recipient(
+                connection_id="business-connection-1",
+                username="knownbuyer",
+            )
+        )
+
+    async def test_unrecognized_business_connection_cannot_add_recipient(self) -> None:
+        recorded = await self.store.record_business_recipient(
+            connection_id="not-connected",
+            username="untrusted",
+            user_id=901,
+        )
+
+        self.assertFalse(recorded)
 
     async def test_message_identity_deduplicates_non_unique_gifts(self) -> None:
         gift, created = await self._receive_gift(owned_gift_id=None)

@@ -44,6 +44,30 @@ class MarketStore:
     async def get_business_connection(self, business_user_id: int) -> dict[str, Any] | None:
         return await self.database.get_business_connection(business_user_id)
 
+    async def record_business_recipient(
+        self,
+        *,
+        connection_id: str,
+        username: str,
+        user_id: int,
+    ) -> bool:
+        return await self.database.record_business_recipient(
+            connection_id=connection_id,
+            username=username,
+            user_id=user_id,
+        )
+
+    async def resolve_business_recipient(
+        self,
+        *,
+        connection_id: str,
+        username: str,
+    ) -> int | None:
+        return await self.database.resolve_business_recipient(
+            connection_id=connection_id,
+            username=username,
+        )
+
     def _load_static_catalog(self) -> None:
         root = Path(__file__).parent.parent
         catalog_path = root / "catalog.json"

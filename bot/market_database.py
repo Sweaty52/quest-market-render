@@ -72,6 +72,21 @@ business_connections = Table(
     Index("ix_market_business_connections_user", "business_user_id", "is_enabled", "can_reply"),
 )
 
+business_recipients = Table(
+    "market_business_recipients",
+    _metadata,
+    Column(
+        "connection_id",
+        String(255),
+        ForeignKey("market_business_connections.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column("username", String(32), primary_key=True),
+    Column("user_id", BigInteger, nullable=False),
+    Column("last_seen_at", DateTime(timezone=True), nullable=False),
+    Index("ix_market_business_recipients_user", "connection_id", "user_id"),
+)
+
 gifts = Table(
     "market_gifts",
     _metadata,
@@ -161,6 +176,7 @@ class MarketDatabase:
         self.engine: AsyncEngine = create_async_engine(normalized_url, pool_pre_ping=True)
         self._notification_lock = asyncio.Lock()
         self._business_connection_lock = asyncio.Lock()
+        self._business_recipient_lock = asyncio.Lock()
 
     async def initialize(self) -> None:
         async with self.engine.begin() as connection:
@@ -212,6 +228,71 @@ class MarketDatabase:
             )
             row = result.mappings().first()
             return dict(row) if row is not None else None
+
+    async def record_business_recipient(
+        self,
+        *,
+        connection_id: str,
+        username: str,
+        user_id: int,
+    ) -> bool:
+        normalized_username = username.casefold()
+        values = {
+            "user_id": user_id,
+            "last_seen_at": datetime.now(timezone.utc),
+        }
+        async with self._business_recipient_lock:
+            async with self.engine.begin() as connection:
+                business_user_id = await connection.scalar(
+                    select(business_connections.c.business_user_id).where(
+                        business_connections.c.id == connection_id,
+                        business_connections.c.is_enabled.is_(True),
+                        business_connections.c.can_reply.is_(True),
+                    )
+                )
+                if business_user_id is None or business_user_id == user_id:
+                    return False
+                updated = await connection.execute(
+                    update(business_recipients)
+                    .where(
+                        business_recipients.c.connection_id == connection_id,
+                        business_recipients.c.username == normalized_username,
+                    )
+                    .values(**values)
+                )
+                if updated.rowcount == 0:
+                    await connection.execute(
+                        insert(business_recipients).values(
+                            connection_id=connection_id,
+                            username=normalized_username,
+                            **values,
+                        )
+                    )
+        return True
+
+    async def resolve_business_recipient(
+        self,
+        *,
+        connection_id: str,
+        username: str,
+    ) -> int | None:
+        normalized_username = username.casefold().lstrip("@")
+        async with self.engine.connect() as connection:
+            result = await connection.execute(
+                select(business_recipients.c.user_id)
+                .join(
+                    business_connections,
+                    business_connections.c.id == business_recipients.c.connection_id,
+                )
+                .where(
+                    business_connections.c.id == connection_id,
+                    business_connections.c.is_enabled.is_(True),
+                    business_connections.c.can_reply.is_(True),
+                    business_recipients.c.username == normalized_username,
+                )
+                .limit(1)
+            )
+            return result.scalar_one_or_none()
 
     async def create_offer(
         self,

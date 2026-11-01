@@ -17,20 +17,20 @@ Create a Render Blueprint from this private repository. The Blueprint starts the
 
 Create the PostgreSQL database in Render, then copy its **internal** database URL into `MARKET_DATABASE_URL` in the web service's Environment settings. Do not commit or share the URL because it contains database credentials. Redeploy after setting it. Local development may use `MARKET_DATABASE_URL=sqlite+aiosqlite:///./data/quest_market.db`.
 
-The bot creates the `market_offers`, `market_gifts`, and `market_business_connections` tables safely at startup. Offers, gift records, and Telegram Business connections use PostgreSQL in production; the static catalog remains loaded from the project files. Each gift stores the Telegram sender, received time, status, Telegram metadata, and (when determinable) an immutable snapshot of the accepted offer and its creator. Telegram-owned gift IDs and source chat/message IDs are unique, so webhook retries do not create duplicate gift records. If multiple accepted offers match a sender, the bot leaves the gift unlinked rather than guessing.
+The bot creates the `market_offers`, `market_gifts`, `market_business_connections`, and `market_business_recipients` tables safely at startup. Offers, gift records, and Telegram Business connections use PostgreSQL in production; the static catalog remains loaded from the project files. Each gift stores the Telegram sender, received time, status, Telegram metadata, and (when determinable) an immutable snapshot of the accepted offer and its creator. Telegram-owned gift IDs and source chat/message IDs are unique, so webhook retries do not create duplicate gift records. If multiple accepted offers match a sender, the bot leaves the gift unlinked rather than guessing.
 
 ### Send offers through Telegram Business
 
 Enable Business Mode for the bot in `@BotFather`, then connect it from the Telegram Business account that will send offers and allow it to reply to chats. The connected account needs Telegram Premium for the requested custom emojis. The bot stores Business connection updates and uses the offer creator's own enabled connection; the bot cannot send as a different creator's account.
 
-Create an offer in a private chat with the bot using the recipient's **numeric Telegram user ID**:
+Create an offer in a private chat with the bot using the recipient's Telegram username or numeric user ID:
 
 ```text
-.buy 123456789 https://t.me/nft/Collectible-123 12.5 gram
+.buy @username https://t.me/nft/Collectible-123 12.5 gram
 .buy 123456789 https://t.me/nft/Collectible-123 500 stars
 ```
 
-The recipient must be reachable in the connected Business account's chats and Telegram must permit that account to reply. The Bot API cannot resolve an arbitrary private-chat `@username` to a user ID, so usernames are not accepted as recipients; ask the recipient for their numeric ID (they can obtain their own by sending `/myid` to the bot). If Telegram rejects delivery, the bot reports the failure and does not fall back to inline mode. Existing inline offer messages can still have their buttons processed, but new inline offers are disabled. Disable inline mode in `@BotFather` as well if you want to remove its Telegram UI entry entirely.
+When an incoming message in a connected Business chat contains a username, the bot remembers the username-to-user-ID association for that Business account. Thus, `@username` works after that person has messaged the connected Business account and the bot received the update. Telegram does not let the Bot API look up a random private user's ID from a username, so an unseen username cannot be resolved; in that case ask them to message the Business account first or provide their numeric ID. Usernames can change, so the bot refreshes the mapping only when it observes a new message from that user. The recipient must be reachable in the connected Business account's chats and Telegram must permit that account to reply. If Telegram rejects delivery, the bot reports the failure and does not fall back to inline mode. Existing inline offer messages can still have their buttons processed, but new inline offers are disabled. Disable inline mode in `@BotFather` as well if you want to remove its Telegram UI entry entirely.
 
 Offers created before PostgreSQL is configured were held only in process memory and cannot be migrated; offers created after the database is configured persist across restarts.
 
