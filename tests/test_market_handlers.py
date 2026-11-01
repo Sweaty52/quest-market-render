@@ -19,6 +19,7 @@ from bot.market_handlers import (
     _user_has_market_access,
     configure_gift_recipient,
     create_buy_offer,
+    offer_action,
     remember_business_recipient,
     update_business_connection,
 )
@@ -145,6 +146,25 @@ class MarketChatAccessTests(unittest.IsolatedAsyncioTestCase):
 
 
 class BusinessOfferTests(unittest.IsolatedAsyncioTestCase):
+    async def test_how_it_works_says_buyer_instead_of_user(self) -> None:
+        query = SimpleNamespace(
+            data="qm:h:abcdef123456",
+            from_user=SimpleNamespace(id=42),
+            answer=AsyncMock(),
+        )
+        store = SimpleNamespace(
+            get_offer=AsyncMock(return_value={
+                "id": "abcdef123456",
+                "buyer_id": 42,
+                "language": "ru",
+            }),
+            get_gift_recipient=AsyncMock(return_value="questbankk"),
+        )
+
+        await offer_action(query, store, MarketSettings(market_bot_token="test-token"))
+
+        self.assertIn("покупателю @questbankk", query.answer.await_args.args[0])
+
     async def test_authorized_user_can_set_gift_recipient(self) -> None:
         settings = MarketSettings(
             market_bot_token="test-token",
