@@ -76,18 +76,31 @@ class OfferCurrencyLabelTests(unittest.TestCase):
             text,
         )
         self.assertIn("• Передайте подарок покупателю для зачисления Gram.", text)
+        self.assertNotIn("предлагает вам", text)
         self.assertNotIn("автором офера", text)
         self.assertNotIn("Я перевёл подарок", text)
 
-    def test_accepted_offer_leaves_buttons_unchanged(self) -> None:
+    def test_accepted_offer_has_no_transferred_button(self) -> None:
         keyboard = _accepted_keyboard("abcdef123456", "tg://send_gift?to=buyer", "ru")
 
         self.assertEqual(
-            [button.text for button in keyboard.inline_keyboard[0]],
-            ["Перевести подарок", "Я перевёл подарок"],
+            [button.text for row in keyboard.inline_keyboard for button in row],
+            ["Перевести подарок", "Как это работает"],
         )
         self.assertEqual(keyboard.inline_keyboard[0][0].url, "tg://send_gift?to=buyer")
-        self.assertEqual(keyboard.inline_keyboard[0][1].callback_data, "qm:s:abcdef123456")
+        self.assertEqual(keyboard.inline_keyboard[1][0].callback_data, "qm:h:abcdef123456")
+
+    def test_pending_offer_shows_buyer_offer_text_with_accept_and_decline_buttons(self) -> None:
+        offer = {**self.offer, "status": "pending", "language": "ru"}
+
+        text = _offer_text(offer)
+        keyboard = _pending_keyboard("abcdef123456", "ru")
+
+        self.assertIn("предлагает вам", text)
+        self.assertEqual(
+            [button.text for button in keyboard.inline_keyboard[0]],
+            ["Отклонить", "Принять"],
+        )
 
     def test_business_offer_uses_the_configured_custom_emoji(self) -> None:
         expected_ids = {

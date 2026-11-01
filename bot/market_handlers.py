@@ -292,7 +292,9 @@ def _offer_text(
         body = text["accepted"].format(gift_emoji=gift_emoji, gift=gift_link)
     else:
         body = text.get(current_status, "")
-    return f"{first}\n{body}"
+    if current_status == "pending":
+        return f"{first}\n{body}"
+    return body
 
 
 def _pending_keyboard(offer_id: str, language: str = "en") -> InlineKeyboardMarkup:
@@ -315,7 +317,7 @@ def _accepted_keyboard(
         else InlineKeyboardButton(text=text["transfer"], callback_data=f"qm:t:{offer_id}")
     )
     return InlineKeyboardMarkup(inline_keyboard=[
-        [transfer_button, InlineKeyboardButton(text=text["transferred"], callback_data=f"qm:s:{offer_id}")],
+        [transfer_button],
         [InlineKeyboardButton(text=text["how"], callback_data=f"qm:h:{offer_id}")],
     ])
 
