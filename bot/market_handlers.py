@@ -47,6 +47,7 @@ _BUY_RE = re.compile(
 _OFFER_TOKEN_COMMAND_RE = re.compile(r"^\.qm\s+([A-Za-z0-9_-]{16})$")
 _GRAM_CUSTOM_EMOJI_ID = "5264766603584641330"
 _STARS_CUSTOM_EMOJI_ID = "5220029283631672529"
+_GIFT_CUSTOM_EMOJI_ID = "5773677501825945508"
 
 
 async def _delete_business_command(message: Message, bot: Bot) -> bool:
@@ -142,7 +143,7 @@ _OFFER_TRANSLATIONS = {
     "ru": {
         "first": "<b>{buyer} предлагает вам</b>",
         "pending": "<b>{price} {currency}</b> за подарок {gift}.\n\nСрок действия офера — {hours} ч.",
-        "accepted": "\n<b>Офер принят.</b> Переведите подарок на аккаунт, указанный автором офера, затем нажмите «Я перевёл подарок».",
+        "accepted": "\n{gift_emoji} Подарок: {gift} успешно продан!\n\n• Передайте подарок покупателю для зачисления Gram.",
         "rejected": "\nПродавец отклонил офер.",
         "gift_sent": "\nПродавец сообщил о переводе. Передача будет завершена после проверки администратором.",
         "decline": "Отклонить",
@@ -167,7 +168,7 @@ _OFFER_TRANSLATIONS = {
     "en": {
         "first": "<b>User {buyer} offers you</b>",
         "pending": "<b>{price} {currency}</b> for the gift {gift}.\n\nOffer expires in {hours} hour{plural}.",
-        "accepted": "\n<b>Offer accepted.</b> Transfer the gift to the account configured by the offer creator, then tap “I've transferred”.",
+        "accepted": "\n{gift_emoji} Gift: {gift} successfully sold!\n\n• Transfer the gift to the buyer to receive Gram.",
         "rejected": "\nThe seller declined this offer.",
         "gift_sent": "\nThe seller reported the transfer. It is not complete until an admin verifies receipt in the bank account.",
         "decline": "Decline",
@@ -192,7 +193,7 @@ _OFFER_TRANSLATIONS = {
     "zh": {
         "first": "<b>{buyer} 向你发出报价</b>",
         "pending": "<b>{price} {currency}</b>，交换礼物 {gift}。\n\n报价将在 {hours} 小时后过期。",
-        "accepted": "\n<b>报价已接受。</b>请将礼物转给报价创建者指定的账号，然后点击“我已转赠”。",
+        "accepted": "\n{gift_emoji} 礼物：{gift} 已成功售出！\n\n• 请将礼物转给买家以获得 Gram。",
         "rejected": "\n卖家已拒绝此报价。",
         "gift_sent": "\n卖家已报告转赠。管理员核实收到礼物后才算完成。",
         "decline": "拒绝",
@@ -280,7 +281,17 @@ def _offer_text(
         hours=hours_left,
         plural="" if hours_left == 1 else "s",
     )
-    body = pending if current_status == "pending" else text.get(current_status, "")
+    if current_status == "pending":
+        body = pending
+    elif current_status == "accepted":
+        gift_emoji = (
+            f'<tg-emoji emoji-id="{_GIFT_CUSTOM_EMOJI_ID}">🎁</tg-emoji>'
+            if use_business_emojis
+            else "🎁"
+        )
+        body = text["accepted"].format(gift_emoji=gift_emoji, gift=gift_link)
+    else:
+        body = text.get(current_status, "")
     return f"{first}\n{body}"
 
 

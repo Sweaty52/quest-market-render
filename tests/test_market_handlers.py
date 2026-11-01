@@ -11,6 +11,7 @@ from bot.config import MarketSettings
 from bot.market_handlers import (
     _BUY_DRAFT_RE,
     _BUY_RE,
+    _accepted_keyboard,
     _delete_business_command,
     _edit_offer_message,
     _gift_recipient_url,
@@ -58,6 +59,35 @@ class OfferCurrencyLabelTests(unittest.TestCase):
                 self.assertIn(message, text)
                 self.assertEqual(keyboard.inline_keyboard[0][0].text, decline)
                 self.assertEqual(keyboard.inline_keyboard[0][1].text, accept)
+
+    def test_accepted_offer_uses_gift_emoji_and_buyer_instructions(self) -> None:
+        offer = {
+            **self.offer,
+            "status": "accepted",
+            "currency": "GRAM",
+            "language": "ru",
+        }
+
+        text = _offer_text(offer, use_business_emojis=True)
+
+        self.assertIn(
+            '<tg-emoji emoji-id="5773677501825945508">🎁</tg-emoji> Подарок: '
+            '<a href="https://t.me/nft/LootBag-4767">Loot Bag #4767</a> успешно продан!',
+            text,
+        )
+        self.assertIn("• Передайте подарок покупателю для зачисления Gram.", text)
+        self.assertNotIn("автором офера", text)
+        self.assertNotIn("Я перевёл подарок", text)
+
+    def test_accepted_offer_leaves_buttons_unchanged(self) -> None:
+        keyboard = _accepted_keyboard("abcdef123456", "tg://send_gift?to=buyer", "ru")
+
+        self.assertEqual(
+            [button.text for button in keyboard.inline_keyboard[0]],
+            ["Перевести подарок", "Я перевёл подарок"],
+        )
+        self.assertEqual(keyboard.inline_keyboard[0][0].url, "tg://send_gift?to=buyer")
+        self.assertEqual(keyboard.inline_keyboard[0][1].callback_data, "qm:s:abcdef123456")
 
     def test_business_offer_uses_the_configured_custom_emoji(self) -> None:
         expected_ids = {
