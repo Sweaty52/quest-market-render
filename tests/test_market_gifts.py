@@ -155,6 +155,56 @@ class GiftDatabaseTests(unittest.IsolatedAsyncioTestCase):
             )
         )
 
+    async def test_offer_token_is_connection_bound_and_can_only_be_claimed_once(self) -> None:
+        await self.store.save_business_connection(
+            connection_id="business-connection-1",
+            business_user_id=900,
+            user_chat_id=900,
+            is_enabled=True,
+            can_reply=True,
+        )
+        token = await self.store.create_offer_token(
+            connection_id="business-connection-1",
+            creator_id=900,
+            buyer_label="@creator",
+            nft_url="https://t.me/nft/Collectible-12",
+            price=Decimal("12.5"),
+            currency="GRAM",
+            language="en",
+        )
+
+        self.assertIsNone(
+            await self.store.claim_offer_token(
+                token=token,
+                connection_id="another-connection",
+                recipient_id=901,
+            )
+        )
+        self.assertIsNone(
+            await self.store.claim_offer_token(
+                token=token,
+                connection_id="business-connection-1",
+                recipient_id=900,
+            )
+        )
+        claimed = await self.store.claim_offer_token(
+            token=token,
+            connection_id="business-connection-1",
+            recipient_id=901,
+        )
+
+        self.assertIsNotNone(claimed)
+        self.assertEqual(claimed["buyer_id"], 900)
+        self.assertEqual(claimed["recipient_id"], 901)
+        self.assertEqual(claimed["business_connection_id"], "business-connection-1")
+        self.assertIsNone(
+            await self.store.claim_offer_token(
+                token=token,
+                connection_id="business-connection-1",
+                recipient_id=902,
+            )
+        )
+
     async def test_unrecognized_business_connection_cannot_add_recipient(self) -> None:
         recorded = await self.store.record_business_recipient(
             connection_id="not-connected",

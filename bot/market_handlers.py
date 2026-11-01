@@ -34,10 +34,15 @@ _STARS_PRICE_RE = re.compile(r"^[1-9]\d{0,20}$")
 _OFFER_ID_RE = re.compile(r"^[0-9a-f]{12}$")
 _TARGET_USERNAME_RE = re.compile(r"^@[A-Za-z][A-Za-z0-9_]{4,31}$")
 _TARGET_RE = re.compile(r"(?:@[A-Za-z][A-Za-z0-9_]{4,31}|[1-9]\d{0,15})")
+_BUY_DRAFT_RE = re.compile(
+    r"^(?:\.buy|/buy)\s+(?:(gram|grams|star|stars)\s+)?(\S+)\s+(\S+)(?:\s+(gram|grams|star|stars))?\s*$",
+    re.IGNORECASE,
+)
 _BUY_RE = re.compile(
     rf"^(?:\.buy|/buy)\s+(?:eng\s+)?(?:(gram|grams|star|stars)\s+)?({_TARGET_RE.pattern})\s+(\S+)\s+(\S+)(?:\s+(gram|grams|star|stars))?\s*$",
     re.IGNORECASE,
 )
+_OFFER_TOKEN_COMMAND_RE = re.compile(r"^\.qm\s+([A-Za-z0-9_-]{16})$")
 _GRAM_CUSTOM_EMOJI_ID = "5264766603584641330"
 _STARS_CUSTOM_EMOJI_ID = "5220029283631672529"
 
@@ -221,23 +226,74 @@ async def update_business_connection(
 
 
 @router.business_message()
-async def remember_business_recipient(message: Message, store: MarketStore) -> None:
-    if (
-        message.chat.type != ChatType.PRIVATE
-        or not message.business_connection_id
-        or message.from_user is None
-        or not message.from_user.username
-    ):
+async def remember_business_recipient(
+    message: Message,
+    bot: Bot,
+    store: MarketStore,
+) -> None:
+    if message.chat.type != ChatType.PRIVATE or not message.business_connection_id:
+        return
+    user = message.from_user
+    if user is None:
+        return
+
+    token_match = _OFFER_TOKEN_COMMAND_RE.fullmatch((message.text or "").strip())
+    if token_match:
+        offer = await store.claim_offer_token(
+            token=token_match.group(1),
+            connection_id=message.business_connection_id,
+            recipient_id=user.id,
+        )
+        if offer is None:
+            await bot.send_message(
+                chat_id=message.chat.id,
+                business_connection_id=message.business_connection_id,
+                text="This offer code is invalid, expired, already used, or belongs to another Business account.",
+            )
+            return
+        try:
+            await bot.send_message(
+                chat_id=user.id,
+                business_connection_id=message.business_connection_id,
+                text=_offer_text(offer, use_business_emojis=True),
+                parse_mode="HTML",
+                link_preview_options=LinkPreviewOptions(
+                    is_disabled=False,
+                    url=offer["nft_url"],
+                    prefer_large_media=True,
+                    show_above_text=True,
+                ),
+                reply_markup=_pending_keyboard(offer["id"]),
+            )
+        except TelegramAPIError:
+            log.exception("Could not deliver Business offer %s", offer["id"])
+            try:
+                await bot.send_message(
+                    chat_id=offer["buyer_id"],
+                    text=(
+                        f"Offer <code>{offer['id']}</code> was created for Telegram user "
+                        f"<code>{user.id}</code>, but Business delivery failed. "
+                        "The one-time code was consumed; create a new code to retry."
+                    ),
+                    parse_mode="HTML",
+                )
+            except TelegramAPIError:
+                log.exception("Could not notify offer creator %s about delivery failure", offer["buyer_id"])
+            return
+        log.info("Offer %s created from a one-time Business code", offer["id"])
+        return
+
+    if not user.username:
         return
     recorded = await store.record_business_recipient(
         connection_id=message.business_connection_id,
-        username=message.from_user.username,
-        user_id=message.from_user.id,
+        username=user.username,
+        user_id=user.id,
     )
     if recorded:
         log.info(
             "Observed recipient @%s through a Business chat",
-            message.from_user.username,
+            user.username,
         )
 
 
@@ -298,9 +354,12 @@ async def start(message: Message, bot: Bot, settings: MarketSettings) -> None:
             f"Hello, {name}! Welcome to <b>Quest Market</b>.\n\n"
             "Send an offer through your connected Telegram Business account:\n"
             "<code>.buy @username https://t.me/nft/Collectible-123 12.5 gram</code>\n"
-            "<code>.buy @username https://t.me/nft/Collectible-123 500 stars</code>\n\n"
+            "<code>.buy @username https://t.me/nft/Collectible-123 500 stars</code>\n"
+            "Or create a one-time code to paste into the recipient's chat:\n"
+            "<code>.buy https://t.me/nft/Collectible-123 12.5 gram</code>\n\n"
             "The recipient must have messaged your connected Business account so the bot can resolve "
-            "their username. You can also use their numeric Telegram ID."
+            "their username. A one-time code instead identifies the recipient from the Business chat "
+            "where the code is used."
         )
         await message.answer(text, parse_mode="HTML")
     elif settings.public_webapp_url:
@@ -349,9 +408,75 @@ async def create_buy_offer(
     text = message.text or ""
     match = _BUY_RE.fullmatch(text.strip())
     if not match:
+        draft_match = _BUY_DRAFT_RE.fullmatch(text.strip())
+        if draft_match:
+            prefix_currency, nft_url, raw_price, suffix_currency = draft_match.groups()
+            if prefix_currency and suffix_currency:
+                prefix_is_stars = prefix_currency.casefold().startswith("star")
+                suffix_is_stars = suffix_currency.casefold().startswith("star")
+                if prefix_is_stars != suffix_is_stars:
+                    await message.answer("Choose one offer currency: GRAM or Stars.")
+                    return
+            currency_token = prefix_currency or suffix_currency or "gram"
+            currency = "STARS" if currency_token.casefold().startswith("star") else "GRAM"
+            if not _valid_nft_url(nft_url):
+                await message.answer("The collectible link must start with https://.")
+                return
+            valid_price = _STARS_PRICE_RE.fullmatch(raw_price) if currency == "STARS" else _PRICE_RE.fullmatch(raw_price)
+            if not valid_price:
+                await message.answer(
+                    "Enter a positive whole-number Stars price, for example <code>500</code>."
+                    if currency == "STARS"
+                    else "Enter a positive GRAM price with up to 9 decimal places, for example <code>12.5</code>.",
+                    parse_mode="HTML",
+                )
+                return
+            try:
+                price = Decimal(raw_price.replace(",", "."))
+            except InvalidOperation:
+                await message.answer(f"Couldn't read the {currency} price.")
+                return
+            if price <= 0:
+                await message.answer(f"Price must be greater than zero {currency}.")
+                return
+
+            user = message.from_user
+            if user is None:
+                return
+            if not await _user_has_market_access(user.id, bot, settings):
+                await message.answer("Quest Market offers are available to members of the authorized Telegram chat.")
+                return
+            business_connection = await store.get_business_connection(user.id)
+            if business_connection is None:
+                await message.answer(
+                    "Connect this bot to your Telegram Business account and allow it to reply to chats "
+                    "before creating an offer code."
+                )
+                return
+
+            buyer_label = f"@{user.username}" if user.username else user.full_name
+            token = await store.create_offer_token(
+                connection_id=business_connection["id"],
+                creator_id=user.id,
+                buyer_label=buyer_label,
+                nft_url=nft_url,
+                price=price,
+                currency=currency,
+                language="en",
+            )
+            await message.answer(
+                "Offer code created. Paste this exact command into the recipient's private chat "
+                "with your connected Business account. The first other person to use it becomes "
+                "the recipient; it expires in 24 hours and works once:\n"
+                f"<code>.qm {escape(token)}</code>",
+                parse_mode="HTML",
+            )
+            return
         await message.answer(
             "Format: <code>.buy @username https://t.me/nft/Collectible-123 12.5 gram</code> "
-            "or <code>.buy 123456789 https://t.me/nft/Collectible-123 500 stars</code>.",
+            "or <code>.buy 123456789 https://t.me/nft/Collectible-123 500 stars</code>.\n"
+            "To generate a one-time recipient command, use "
+            "<code>.buy https://t.me/nft/Collectible-123 12.5 gram</code>.",
             parse_mode="HTML",
         )
         return

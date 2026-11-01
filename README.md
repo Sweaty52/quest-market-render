@@ -17,7 +17,7 @@ Create a Render Blueprint from this private repository. The Blueprint starts the
 
 Create the PostgreSQL database in Render, then copy its **internal** database URL into `MARKET_DATABASE_URL` in the web service's Environment settings. Do not commit or share the URL because it contains database credentials. Redeploy after setting it. Local development may use `MARKET_DATABASE_URL=sqlite+aiosqlite:///./data/quest_market.db`.
 
-The bot creates the `market_offers`, `market_gifts`, `market_business_connections`, and `market_business_recipients` tables safely at startup. Offers, gift records, and Telegram Business connections use PostgreSQL in production; the static catalog remains loaded from the project files. Each gift stores the Telegram sender, received time, status, Telegram metadata, and (when determinable) an immutable snapshot of the accepted offer and its creator. Telegram-owned gift IDs and source chat/message IDs are unique, so webhook retries do not create duplicate gift records. If multiple accepted offers match a sender, the bot leaves the gift unlinked rather than guessing.
+The bot creates the `market_offers`, `market_offer_tokens`, `market_gifts`, `market_business_connections`, and `market_business_recipients` tables safely at startup. Offers, one-time offer codes, gift records, and Telegram Business connections use PostgreSQL in production; the static catalog remains loaded from the project files. Each gift stores the Telegram sender, received time, status, Telegram metadata, and (when determinable) an immutable snapshot of the accepted offer and its creator. Telegram-owned gift IDs and source chat/message IDs are unique, so webhook retries do not create duplicate gift records. If multiple accepted offers match a sender, the bot leaves the gift unlinked rather than guessing.
 
 ### Send offers through Telegram Business
 
@@ -29,6 +29,14 @@ Create an offer in a private chat with the bot using the recipient's Telegram us
 .buy @username https://t.me/nft/Collectible-123 12.5 gram
 .buy 123456789 https://t.me/nft/Collectible-123 500 stars
 ```
+
+You can avoid entering recipient details by creating a one-time command:
+
+```text
+.buy https://t.me/nft/Collectible-123 12.5 gram
+```
+
+The bot returns a command such as `.qm <unique-code>`. Paste it into the intended recipient's private chat with the connected Business account. The first other person whose message reaches the bot in that Business connection becomes the offer recipient, and the bot sends them the offer with the usual Accept/Decline buttons. Codes are tied to the creator's Business connection, expire after 24 hours, cannot be used by the creator, and are consumed once. Do not share the code with anyone except the intended recipient. The Bot API must deliver the pasted command as a Business message; if Telegram does not deliver that update, no offer is created.
 
 When an incoming message in a connected Business chat contains a username, the bot remembers the username-to-user-ID association for that Business account. Thus, `@username` works after that person has messaged the connected Business account and the bot received the update. Telegram does not let the Bot API look up a random private user's ID from a username, so an unseen username cannot be resolved; in that case ask them to message the Business account first or provide their numeric ID. Usernames can change, so the bot refreshes the mapping only when it observes a new message from that user. The recipient must be reachable in the connected Business account's chats and Telegram must permit that account to reply. If Telegram rejects delivery, the bot reports the failure and does not fall back to inline mode. Existing inline offer messages can still have their buttons processed, but new inline offers are disabled. Disable inline mode in `@BotFather` as well if you want to remove its Telegram UI entry entirely.
 

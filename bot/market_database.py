@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import secrets
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -85,6 +86,31 @@ business_recipients = Table(
     Column("user_id", BigInteger, nullable=False),
     Column("last_seen_at", DateTime(timezone=True), nullable=False),
     Index("ix_market_business_recipients_user", "connection_id", "user_id"),
+)
+
+offer_tokens = Table(
+    "market_offer_tokens",
+    _metadata,
+    Column("token", String(32), primary_key=True),
+    Column(
+        "connection_id",
+        String(255),
+        ForeignKey("market_business_connections.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("creator_id", BigInteger, nullable=False),
+    Column("buyer_label", String(120), nullable=False),
+    Column("nft_url", Text, nullable=False),
+    Column("price", Numeric(30, 9), nullable=False),
+    Column("currency", String(8), nullable=False),
+    Column("language", String(8), nullable=False),
+    Column("status", String(16), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("expires_at", DateTime(timezone=True), nullable=False),
+    Column("claimed_by", BigInteger),
+    Column("offer_id", String(12), ForeignKey("market_offers.id", ondelete="SET NULL")),
+    CheckConstraint("status IN ('pending', 'claimed')"),
+    Index("ix_market_offer_tokens_expiry", "status", "expires_at"),
 )
 
 gifts = Table(
@@ -324,6 +350,100 @@ class MarketDatabase:
         async with self.engine.begin() as connection:
             await connection.execute(insert(offers).values(**offer))
         return offer
+
+    async def create_offer_token(
+        self,
+        *,
+        connection_id: str,
+        creator_id: int,
+        buyer_label: str,
+        nft_url: str,
+        price: Decimal,
+        currency: str,
+        language: str,
+    ) -> str:
+        now = datetime.now(timezone.utc)
+        token = secrets.token_urlsafe(12)
+        async with self.engine.begin() as connection:
+            await connection.execute(
+                insert(offer_tokens).values(
+                    token=token,
+                    connection_id=connection_id,
+                    creator_id=creator_id,
+                    buyer_label=buyer_label[:120],
+                    nft_url=nft_url,
+                    price=price,
+                    currency=currency,
+                    language=language,
+                    status="pending",
+                    created_at=now,
+                    expires_at=now + timedelta(hours=24),
+                    claimed_by=None,
+                    offer_id=None,
+                )
+            )
+        return token
+
+    async def claim_offer_token(
+        self,
+        *,
+        token: str,
+        connection_id: str,
+        recipient_id: int,
+    ) -> dict[str, Any] | None:
+        now = datetime.now(timezone.utc)
+        async with self.engine.begin() as connection:
+            token_row = (
+                await connection.execute(
+                    select(offer_tokens)
+                    .join(
+                        business_connections,
+                        business_connections.c.id == offer_tokens.c.connection_id,
+                    )
+                    .where(
+                        offer_tokens.c.token == token,
+                        offer_tokens.c.connection_id == connection_id,
+                        offer_tokens.c.status == "pending",
+                        offer_tokens.c.expires_at > now,
+                        business_connections.c.is_enabled.is_(True),
+                        business_connections.c.can_reply.is_(True),
+                    )
+                    .with_for_update()
+                )
+            ).mappings().first()
+            if token_row is None or token_row["creator_id"] == recipient_id:
+                return None
+
+            offer = {
+                "id": uuid4().hex[:12],
+                "buyer_id": token_row["creator_id"],
+                "recipient_id": recipient_id,
+                "buyer_label": token_row["buyer_label"],
+                "buyer_username": _offer_creator_username({"buyer_label": token_row["buyer_label"]}),
+                "nft_url": token_row["nft_url"],
+                "price": token_row["price"],
+                "currency": token_row["currency"],
+                "language": token_row["language"],
+                "status": "pending",
+                "accepted_by": None,
+                "created_at": now,
+                "expires_at": now + timedelta(hours=6),
+                "updated_at": now,
+            }
+            await connection.execute(insert(offers).values(**offer))
+            claimed = await connection.execute(
+                update(offer_tokens)
+                .where(
+                    offer_tokens.c.token == token,
+                    offer_tokens.c.status == "pending",
+                    offer_tokens.c.expires_at > now,
+                )
+                .values(status="claimed", claimed_by=recipient_id, offer_id=offer["id"])
+            )
+            if claimed.rowcount != 1:
+                raise RuntimeError("Offer token was claimed concurrently.")
+            offer["business_connection_id"] = connection_id
+            return offer
 
     async def get_offer(self, offer_id: str) -> dict[str, Any] | None:
         async with self.engine.begin() as connection:

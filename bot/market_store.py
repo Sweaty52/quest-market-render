@@ -68,6 +68,22 @@ class MarketStore:
             username=username,
         )
 
+    async def create_offer_token(self, **offer: Any) -> str:
+        return await self.database.create_offer_token(**offer)
+
+    async def claim_offer_token(
+        self,
+        *,
+        token: str,
+        connection_id: str,
+        recipient_id: int,
+    ) -> dict[str, Any] | None:
+        return await self.database.claim_offer_token(
+            token=token,
+            connection_id=connection_id,
+            recipient_id=recipient_id,
+        )
+
     def _load_static_catalog(self) -> None:
         root = Path(__file__).parent.parent
         catalog_path = root / "catalog.json"

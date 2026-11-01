@@ -11,6 +11,7 @@ from bot.market_handlers import (
     _offer_text,
     _user_has_market_access,
     create_buy_offer,
+    remember_business_recipient,
     update_business_connection,
 )
 
@@ -177,6 +178,70 @@ class BusinessOfferTests(unittest.IsolatedAsyncioTestCase):
         store.create_offer.assert_not_awaited()
         bot.send_message.assert_not_awaited()
         message.answer.assert_awaited_once()
+
+    async def test_buy_without_recipient_creates_a_one_time_business_command(self) -> None:
+        settings = MarketSettings(
+            market_bot_token="test-token",
+            market_allowed_user_ids="42",
+        )
+        store = SimpleNamespace(
+            get_business_connection=AsyncMock(return_value={"id": "business-connection-1"}),
+            create_offer_token=AsyncMock(return_value="0123456789abcdef"),
+        )
+        message = SimpleNamespace(
+            chat=SimpleNamespace(type=ChatType.PRIVATE),
+            text=".buy https://t.me/nft/Collectible-123 12.5 gram",
+            from_user=SimpleNamespace(id=42, username="creator", full_name="Creator"),
+            answer=AsyncMock(),
+        )
+
+        await create_buy_offer(message, SimpleNamespace(), store, settings)
+
+        store.create_offer_token.assert_awaited_once_with(
+            connection_id="business-connection-1",
+            creator_id=42,
+            buyer_label="@creator",
+            nft_url="https://t.me/nft/Collectible-123",
+            price=Decimal("12.5"),
+            currency="GRAM",
+            language="en",
+        )
+        self.assertIn(".qm 0123456789abcdef", message.answer.await_args.args[0])
+
+    async def test_business_code_claim_sends_offer_to_the_sender_and_is_not_remembered_as_username(self) -> None:
+        offer = {
+            "id": "abcdef123456",
+            "buyer_id": 42,
+            "status": "pending",
+            "price": Decimal("12.5"),
+            "currency": "GRAM",
+            "nft_url": "https://t.me/nft/Collectible-123",
+            "buyer_label": "@creator",
+        }
+        bot = SimpleNamespace(send_message=AsyncMock())
+        store = SimpleNamespace(
+            claim_offer_token=AsyncMock(return_value=offer),
+            record_business_recipient=AsyncMock(),
+        )
+        message = SimpleNamespace(
+            chat=SimpleNamespace(type=ChatType.PRIVATE, id=900),
+            business_connection_id="business-connection-1",
+            text=".qm 0123456789abcdef",
+            from_user=SimpleNamespace(id=900, username="recipient"),
+        )
+
+        await remember_business_recipient(message, bot, store)
+
+        store.claim_offer_token.assert_awaited_once_with(
+            token="0123456789abcdef",
+            connection_id="business-connection-1",
+            recipient_id=900,
+        )
+        store.record_business_recipient.assert_not_awaited()
+        sent = bot.send_message.await_args.kwargs
+        self.assertEqual(sent["chat_id"], 900)
+        self.assertEqual(sent["business_connection_id"], "business-connection-1")
+        self.assertEqual(sent["reply_markup"].inline_keyboard[0][1].callback_data, "qm:a:abcdef123456")
 
 
 if __name__ == "__main__":
