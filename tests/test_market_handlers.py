@@ -205,8 +205,13 @@ class BusinessOfferTests(unittest.IsolatedAsyncioTestCase):
 
         await offer_action(query, store, MarketSettings(market_bot_token="test-token"))
 
-        self.assertIn("покупателю", query.answer.await_args.args[0])
+        self.assertEqual(
+            query.answer.await_args.args[0],
+            "Передайте подарок покупателю для зачисления Gram.",
+        )
         self.assertNotIn("@", query.answer.await_args.args[0])
+        self.assertNotIn("подтверж", query.answer.await_args.args[0].casefold())
+        self.assertNotIn("затем нажмите", query.answer.await_args.args[0])
         store.get_offer.assert_awaited_once_with("abcdef123456")
 
     async def test_authorized_user_can_set_gift_recipient(self) -> None:
