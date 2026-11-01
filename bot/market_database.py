@@ -392,21 +392,28 @@ class MarketDatabase:
         recipient_id: int,
     ) -> dict[str, Any] | None:
         now = datetime.now(timezone.utc)
+        token_connection = business_connections.alias("token_connection")
+        recipient_connection = business_connections.alias("recipient_connection")
         async with self.engine.begin() as connection:
             token_row = (
                 await connection.execute(
                     select(offer_tokens)
                     .join(
-                        business_connections,
-                        business_connections.c.id == offer_tokens.c.connection_id,
+                        token_connection,
+                        token_connection.c.id == offer_tokens.c.connection_id,
+                    )
+                    .join(
+                        recipient_connection,
+                        recipient_connection.c.id == connection_id,
                     )
                     .where(
                         offer_tokens.c.token == token,
-                        offer_tokens.c.connection_id == connection_id,
+                        token_connection.c.business_user_id == offer_tokens.c.creator_id,
+                        recipient_connection.c.business_user_id == offer_tokens.c.creator_id,
                         offer_tokens.c.status == "pending",
                         offer_tokens.c.expires_at > now,
-                        business_connections.c.is_enabled.is_(True),
-                        business_connections.c.can_reply.is_(True),
+                        recipient_connection.c.is_enabled.is_(True),
+                        recipient_connection.c.can_reply.is_(True),
                     )
                     .with_for_update()
                 )

@@ -47,6 +47,50 @@ _GRAM_CUSTOM_EMOJI_ID = "5264766603584641330"
 _STARS_CUSTOM_EMOJI_ID = "5220029283631672529"
 
 
+async def _delete_business_command(message: Message, bot: Bot) -> bool:
+    try:
+        deleted = await bot.delete_message(
+            chat_id=message.chat.id,
+            message_id=message.message_id,
+        )
+        if deleted:
+            return True
+        log.info(
+            "Telegram did not delete offer-code message %s in chat %s; trying Business API",
+            message.message_id,
+            message.chat.id,
+        )
+    except TelegramAPIError:
+        log.info(
+            "Standard deletion failed for offer-code message %s in chat %s; trying Business API",
+            message.message_id,
+            message.chat.id,
+            exc_info=True,
+        )
+    if not message.business_connection_id:
+        return False
+    try:
+        deleted = await bot.delete_business_messages(
+            business_connection_id=message.business_connection_id,
+            message_ids=[message.message_id],
+        )
+        if deleted:
+            return True
+    except TelegramAPIError:
+        log.info(
+            "Business deletion failed for offer-code message %s in chat %s",
+            message.message_id,
+            message.chat.id,
+            exc_info=True,
+        )
+    log.warning(
+        "Telegram could not delete offer-code message %s in chat %s",
+        message.message_id,
+        message.chat.id,
+    )
+    return False
+
+
 async def _user_has_market_access(user_id: int, bot: Bot, settings: MarketSettings) -> bool:
     if settings.user_has_market_access(user_id):
         return True
@@ -239,6 +283,7 @@ async def remember_business_recipient(
 
     token_match = _OFFER_TOKEN_COMMAND_RE.fullmatch((message.text or "").strip())
     if token_match:
+        await _delete_business_command(message, bot)
         offer = await store.claim_offer_token(
             token=token_match.group(1),
             connection_id=message.business_connection_id,

@@ -163,6 +163,13 @@ class GiftDatabaseTests(unittest.IsolatedAsyncioTestCase):
             is_enabled=True,
             can_reply=True,
         )
+        await self.store.save_business_connection(
+            connection_id="business-connection-2",
+            business_user_id=900,
+            user_chat_id=900,
+            is_enabled=True,
+            can_reply=True,
+        )
         token = await self.store.create_offer_token(
             connection_id="business-connection-1",
             creator_id=900,
@@ -176,7 +183,7 @@ class GiftDatabaseTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(
             await self.store.claim_offer_token(
                 token=token,
-                connection_id="another-connection",
+                connection_id="another-owners-connection",
                 recipient_id=901,
             )
         )
@@ -189,18 +196,18 @@ class GiftDatabaseTests(unittest.IsolatedAsyncioTestCase):
         )
         claimed = await self.store.claim_offer_token(
             token=token,
-            connection_id="business-connection-1",
+            connection_id="business-connection-2",
             recipient_id=901,
         )
 
         self.assertIsNotNone(claimed)
         self.assertEqual(claimed["buyer_id"], 900)
         self.assertEqual(claimed["recipient_id"], 901)
-        self.assertEqual(claimed["business_connection_id"], "business-connection-1")
+        self.assertEqual(claimed["business_connection_id"], "business-connection-2")
         self.assertIsNone(
             await self.store.claim_offer_token(
                 token=token,
-                connection_id="business-connection-1",
+                connection_id="business-connection-2",
                 recipient_id=902,
             )
         )

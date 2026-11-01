@@ -4,10 +4,12 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 from aiogram.enums import ChatMemberStatus, ChatType
+from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 
 from bot.config import MarketSettings
 from bot.market_handlers import (
     _BUY_RE,
+    _delete_business_command,
     _offer_text,
     _user_has_market_access,
     create_buy_offer,
@@ -89,6 +91,52 @@ class MarketChatAccessTests(unittest.IsolatedAsyncioTestCase):
 
 
 class BusinessOfferTests(unittest.IsolatedAsyncioTestCase):
+    async def test_business_code_message_is_deleted_before_claiming(self) -> None:
+        bot = SimpleNamespace(
+            delete_message=AsyncMock(return_value=True),
+            delete_business_messages=AsyncMock(),
+            send_message=AsyncMock(),
+        )
+        store = SimpleNamespace(
+            claim_offer_token=AsyncMock(return_value=None),
+            record_business_recipient=AsyncMock(),
+        )
+        message = SimpleNamespace(
+            chat=SimpleNamespace(type=ChatType.PRIVATE, id=900),
+            business_connection_id="business-connection-1",
+            message_id=321,
+            text=".qm 0123456789abcdef",
+            from_user=SimpleNamespace(id=900, username="recipient"),
+        )
+
+        await remember_business_recipient(message, bot, store)
+
+        bot.delete_message.assert_awaited_once_with(chat_id=900, message_id=321)
+        bot.delete_business_messages.assert_not_awaited()
+        bot.send_message.assert_awaited_once()
+
+    async def test_business_code_deletion_falls_back_to_business_delete(self) -> None:
+        bot = SimpleNamespace(
+            delete_message=AsyncMock(
+                side_effect=TelegramBadRequest(
+                    method=SimpleNamespace(),
+                    message="not deletable",
+                )
+            ),
+            delete_business_messages=AsyncMock(return_value=True),
+        )
+        message = SimpleNamespace(
+            business_connection_id="business-connection-1",
+            message_id=321,
+            chat=SimpleNamespace(id=900),
+        )
+
+        self.assertTrue(await _delete_business_command(message, bot))
+        bot.delete_business_messages.assert_awaited_once_with(
+            business_connection_id="business-connection-1",
+            message_ids=[321],
+        )
+
     async def test_business_connection_reads_reply_right_from_rights_object(self) -> None:
         store = SimpleNamespace(save_business_connection=AsyncMock())
         connection = SimpleNamespace(
@@ -160,7 +208,11 @@ class BusinessOfferTests(unittest.IsolatedAsyncioTestCase):
             market_bot_token="test-token",
             market_allowed_user_ids="42",
         )
-        bot = SimpleNamespace(send_message=AsyncMock())
+        bot = SimpleNamespace(
+            send_message=AsyncMock(),
+            delete_message=AsyncMock(return_value=True),
+            delete_business_messages=AsyncMock(),
+        )
         store = SimpleNamespace(
             get_business_connection=AsyncMock(return_value={"id": "business-connection-1"}),
             resolve_business_recipient=AsyncMock(return_value=None),
@@ -218,7 +270,11 @@ class BusinessOfferTests(unittest.IsolatedAsyncioTestCase):
             "nft_url": "https://t.me/nft/Collectible-123",
             "buyer_label": "@creator",
         }
-        bot = SimpleNamespace(send_message=AsyncMock())
+        bot = SimpleNamespace(
+            send_message=AsyncMock(),
+            delete_business_messages=AsyncMock(return_value=True),
+            delete_message=AsyncMock(),
+        )
         store = SimpleNamespace(
             claim_offer_token=AsyncMock(return_value=offer),
             record_business_recipient=AsyncMock(),
@@ -226,6 +282,7 @@ class BusinessOfferTests(unittest.IsolatedAsyncioTestCase):
         message = SimpleNamespace(
             chat=SimpleNamespace(type=ChatType.PRIVATE, id=900),
             business_connection_id="business-connection-1",
+            message_id=321,
             text=".qm 0123456789abcdef",
             from_user=SimpleNamespace(id=900, username="recipient"),
         )
@@ -238,6 +295,10 @@ class BusinessOfferTests(unittest.IsolatedAsyncioTestCase):
             recipient_id=900,
         )
         store.record_business_recipient.assert_not_awaited()
+        bot.delete_message.assert_awaited_once_with(
+            chat_id=message.chat.id,
+            message_id=message.message_id,
+        )
         sent = bot.send_message.await_args.kwargs
         self.assertEqual(sent["chat_id"], 900)
         self.assertEqual(sent["business_connection_id"], "business-connection-1")
