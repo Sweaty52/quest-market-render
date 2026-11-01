@@ -40,6 +40,7 @@ async def main() -> None:
     try:
         await store.initialize()
         me = await bot.get_me()
+        await bot.set_my_name(name="Gift Relayer")
         await bot.set_my_commands([
             BotCommand(command="start", description="Начало и создание оферов"),
             BotCommand(command="myid", description="Показать ваш Telegram ID"),

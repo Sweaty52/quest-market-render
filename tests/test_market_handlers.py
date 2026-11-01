@@ -188,7 +188,7 @@ class MarketChatAccessTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(await _user_has_market_access(43, self.bot, self.settings))
 
-    async def test_start_explains_access_is_restricted_without_web_app(self) -> None:
+    async def test_start_shows_support_contact_when_access_is_restricted(self) -> None:
         message = SimpleNamespace(
             from_user=SimpleNamespace(id=43, first_name="Guest"),
             answer=AsyncMock(),
@@ -201,8 +201,24 @@ class MarketChatAccessTests(unittest.IsolatedAsyncioTestCase):
         )
 
         message.answer.assert_awaited_once_with(
-            "Доступ к Quest Market ограничен. Обратитесь к администратору."
+            "Доступ к Gift Relayer ограничен.\nСвязь: @xehe3"
         )
+
+    async def test_start_shows_bot_name_and_support_contact_for_authorized_user(self) -> None:
+        message = SimpleNamespace(
+            from_user=SimpleNamespace(id=42, first_name="Member"),
+            answer=AsyncMock(),
+        )
+
+        await start(
+            message,
+            SimpleNamespace(),
+            self.settings,
+        )
+
+        text = message.answer.await_args.args[0]
+        self.assertIn("<b>Gift Relayer</b>", text)
+        self.assertTrue(text.endswith("Связь: @xehe3"))
 
 
 class BusinessOfferTests(unittest.IsolatedAsyncioTestCase):

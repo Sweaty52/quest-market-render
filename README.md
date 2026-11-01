@@ -1,5 +1,5 @@
 
-# Quest Market Bot
+# Gift Relayer
 
 Telegram collectible marketplace bot. The Mini App and its catalog have been removed.
 
@@ -7,7 +7,7 @@ Telegram collectible marketplace bot. The Mini App and its catalog have been rem
 
 Create a Render Blueprint from this private repository. The Blueprint starts the bot webhook service and a minimal HTTP server for Telegram updates and Render health checks. Add these environment variables in Render:
 
-- `MARKET_BOT_TOKEN` — BotFather token for Quest Market.
+- `MARKET_BOT_TOKEN` — BotFather token for Gift Relayer.
 - `MARKET_DATABASE_URL` — internal connection URL for a Render PostgreSQL database. The bot refuses to start on Render with SQLite because the service filesystem is not persistent.
 - `MARKET_ALLOWED_USER_IDS` — optional comma-separated Telegram IDs that always have access.
 - `MARKET_ACCESS_CHAT_ID` — Telegram chat whose members can create and publish offers; the bot must be an administrator there.

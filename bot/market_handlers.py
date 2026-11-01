@@ -360,7 +360,7 @@ async def configure_gift_recipient(
     if message.chat.type != ChatType.PRIVATE or user is None:
         return
     if not await _user_has_market_access(user.id, bot, settings):
-        await message.answer("Эта настройка доступна только пользователям с разрешённым доступом к Quest Market.")
+        await message.answer("Эта настройка доступна только пользователям с разрешённым доступом к Gift Relayer.")
         return
 
     parts = (message.text or "").split()
@@ -539,7 +539,7 @@ async def receive_gift(message: Message, bot: Bot, store: MarketStore, settings:
     if user is None:
         return
     if not await _user_has_market_access(user.id, bot, settings):
-        await message.answer("Регистрировать подарки могут только пользователи с доступом к Quest Market.")
+        await message.answer("Регистрировать подарки могут только пользователи с доступом к Gift Relayer.")
         return
 
     details = _gift_details(message)
@@ -585,7 +585,7 @@ async def start(message: Message, bot: Bot, settings: MarketSettings) -> None:
     if has_market_access:
         name = escape(message.from_user.first_name, quote=True)
         text = (
-            f"Привет, {name}! Добро пожаловать в <b>Quest Market</b>.\n\n"
+            f"Привет, {name}! Добро пожаловать в <b>Gift Relayer</b>.\n\n"
             "Создайте офер через подключённый аккаунт Telegram Business:\n"
             "<code>.buy ru @username https://t.me/nft/Collectible-123 12.5 gram</code>\n"
             "<code>.buy eng @username https://t.me/nft/Collectible-123 500 stars</code>\n"
@@ -596,11 +596,12 @@ async def start(message: Message, bot: Bot, settings: MarketSettings) -> None:
             "Чтобы определить получателя по username, он должен сначала написать вашему Business-аккаунту. "
             "Одноразовый код определяет его по чату, в котором код был использован.\n\n"
             "Задайте аккаунт для получения подарков командой <code>/giftrecipient @username</code>; "
-            "посмотреть текущий — <code>/giftrecipient</code>."
+            "посмотреть текущий — <code>/giftrecipient</code>.\n\n"
+            "Связь: @xehe3"
         )
         await message.answer(text, parse_mode="HTML")
     elif not has_market_access:
-        await message.answer("Доступ к Quest Market ограничен. Обратитесь к администратору.")
+        await message.answer("Доступ к Gift Relayer ограничен.\nСвязь: @xehe3")
 
 
 @router.message(F.text.startswith(".buy") | F.text.startswith("/buy"))
@@ -611,7 +612,7 @@ async def create_buy_offer(
     settings: MarketSettings,
 ) -> None:
     if message.chat.type != ChatType.PRIVATE:
-        await message.answer("Создавайте оферы в личном чате с Quest Market.")
+        await message.answer("Создавайте оферы в личном чате с Gift Relayer.")
         return
     text = message.text or ""
     match = _BUY_RE.fullmatch(text.strip())
@@ -845,7 +846,7 @@ async def link_gift(message: Message, bot: Bot, store: MarketStore, settings: Ma
     if message.chat.type != ChatType.PRIVATE or user is None:
         return
     if not await _user_has_market_access(user.id, bot, settings):
-        await message.answer("Связывать подарки с оферами могут только пользователи с доступом к Quest Market.")
+        await message.answer("Связывать подарки с оферами могут только пользователи с доступом к Gift Relayer.")
         return
     parts = (message.text or "").split()
     if len(parts) != 3 or not _OFFER_ID_RE.fullmatch(parts[2]):
