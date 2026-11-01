@@ -4,7 +4,6 @@ import asyncio
 import logging
 
 from aiogram import Bot, Dispatcher
-from aiogram.types import BotCommand
 from pydantic import ValidationError
 
 from .config import MarketSettings
@@ -41,14 +40,7 @@ async def main() -> None:
         await store.initialize()
         me = await bot.get_me()
         await bot.set_my_name(name="Gift Relayer")
-        await bot.set_my_commands([
-            BotCommand(command="start", description="Начало и создание оферов"),
-            BotCommand(command="myid", description="Показать ваш Telegram ID"),
-            BotCommand(command="giftrecipient", description="Настроить получателя подарков"),
-            BotCommand(command="linkgift", description="Связать подарок с офером"),
-            BotCommand(command="pendinggifts", description="Подарки, ожидающие проверки"),
-            BotCommand(command="confirmgift", description="Подтвердить передачу подарка"),
-        ])
+        await bot.set_my_commands([])
         await bot.set_chat_menu_button()
         web_runner = await start_http_server(settings, bot, dispatcher)
         log.info(
