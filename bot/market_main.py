@@ -7,7 +7,6 @@ from aiogram import Bot, Dispatcher
 from pydantic import ValidationError
 
 from .config import MarketSettings
-from .gift_notifications import gift_notification_worker
 from .market_handlers import router
 from .market_store import MarketStore
 from .market_http import start_http_server
@@ -35,7 +34,6 @@ async def main() -> None:
     dispatcher["store"] = store
     dispatcher.include_router(router)
     web_runner = None
-    notification_task: asyncio.Task[None] | None = None
     try:
         await store.initialize()
         me = await bot.get_me()
@@ -44,18 +42,11 @@ async def main() -> None:
         await bot.set_chat_menu_button()
         web_runner = await start_http_server(settings, bot, dispatcher)
         log.info(
-            "Quest Market started as @%s; persistent offer and gift storage is active; HTTP server listening on %s:%d",
+            "Quest Market started as @%s; persistent offer storage is active; HTTP server listening on %s:%d",
             me.username,
             settings.http_host,
             settings.listen_port,
         )
-        if settings.offers_group_id is None:
-            log.warning("OFFERS_GROUP_ID is not configured; transfer notifications are disabled.")
-        else:
-            notification_task = asyncio.create_task(
-                gift_notification_worker(bot, store, settings),
-                name="gift-notification-worker",
-            )
         if settings.bot_mode == "webhook":
             if not settings.public_webhook_url:
                 raise SystemExit("RENDER_EXTERNAL_URL or WEBHOOK_BASE_URL is required in webhook mode.")
@@ -70,12 +61,6 @@ async def main() -> None:
         else:
             await dispatcher.start_polling(bot, allowed_updates=dispatcher.resolve_used_update_types())
     finally:
-        if notification_task is not None:
-            notification_task.cancel()
-            try:
-                await notification_task
-            except asyncio.CancelledError:
-                pass
         if web_runner is not None:
             await web_runner.cleanup()
         await bot.session.close()

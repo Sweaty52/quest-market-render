@@ -7,7 +7,6 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from html import escape
 from urllib.parse import quote, urlsplit
-from uuid import UUID
 
 from aiogram import Bot, F, Router
 from aiogram.enums import ChatMemberStatus, ChatType
@@ -24,7 +23,6 @@ from aiogram.types import (
 )
 
 from .config import MarketSettings
-from .gift_notifications import deliver_pending_gift_notifications
 from .market_store import MarketStore
 
 log = logging.getLogger(__name__)
@@ -144,7 +142,7 @@ _OFFER_TRANSLATIONS = {
         "pending": "<b>{price} {currency}</b> за подарок {gift}.\n\nСрок действия офера — {hours} ч.",
         "accepted": "\n{gift_emoji} Подарок: {gift} успешно продан!\n\n• Передайте подарок покупателю для зачисления Gram.",
         "rejected": "\nПродавец отклонил офер.",
-        "gift_sent": "\nПродавец сообщил о переводе. Передача будет завершена после проверки администратором.",
+        "gift_sent": "\nПродавец сообщил о переводе подарка.",
         "decline": "Отклонить",
         "accept": "Принять",
         "transfer": "Перевести подарок",
@@ -161,7 +159,7 @@ _OFFER_TRANSLATIONS = {
         "unavailable": "Это действие недоступно.",
         "accepted_success": "Офер принят.",
         "declined_success": "Офер отклонён.",
-        "reported_success": "Перевод отмечен. Администратору банка ещё нужно подтвердить получение.",
+        "reported_success": "Перевод подарка отмечен.",
         "update_failed": "{success} Статус сохранён, но Telegram не удалось обновить сообщение.",
     },
     "en": {
@@ -169,7 +167,7 @@ _OFFER_TRANSLATIONS = {
         "pending": "<b>{price} {currency}</b> for the gift {gift}.\n\nOffer expires in {hours} hour{plural}.",
         "accepted": "\n{gift_emoji} Gift: {gift} successfully sold!\n\n• Transfer the gift to the buyer to receive Gram.",
         "rejected": "\nThe seller declined this offer.",
-        "gift_sent": "\nThe seller reported the transfer. It is not complete until an admin verifies receipt in the bank account.",
+        "gift_sent": "\nThe seller reported sending the gift.",
         "decline": "Decline",
         "accept": "Accept",
         "transfer": "Transfer gift",
@@ -186,7 +184,7 @@ _OFFER_TRANSLATIONS = {
         "unavailable": "This action is unavailable.",
         "accepted_success": "Offer accepted.",
         "declined_success": "Offer declined.",
-        "reported_success": "Transfer reported. A bank admin must still verify receipt.",
+        "reported_success": "Gift transfer reported.",
         "update_failed": "{success} The offer status was saved, but Telegram could not update its message.",
     },
     "zh": {
@@ -194,7 +192,7 @@ _OFFER_TRANSLATIONS = {
         "pending": "<b>{price} {currency}</b>，交换礼物 {gift}。\n\n报价将在 {hours} 小时后过期。",
         "accepted": "\n{gift_emoji} 礼物：{gift} 已成功售出！\n\n• 请将礼物转给买家以获得 Gram。",
         "rejected": "\n卖家已拒绝此报价。",
-        "gift_sent": "\n卖家已报告转赠。管理员核实收到礼物后才算完成。",
+        "gift_sent": "\n卖家已报告转赠礼物。",
         "decline": "拒绝",
         "accept": "接受",
         "transfer": "转赠礼物",
@@ -211,7 +209,7 @@ _OFFER_TRANSLATIONS = {
         "unavailable": "此操作不可用。",
         "accepted_success": "报价已接受。",
         "declined_success": "报价已拒绝。",
-        "reported_success": "已报告转赠，仍需银行管理员核实收到礼物。",
+        "reported_success": "已报告转赠礼物。",
         "update_failed": "{success} 状态已保存，但 Telegram 无法更新消息。",
     },
 }
@@ -390,43 +388,6 @@ async def configure_gift_recipient(
     )
 
 
-def _gift_details(message: Message) -> dict:
-    if message.unique_gift:
-        info = message.unique_gift
-        gift = info.gift
-        base_name = gift.base_name
-        gift_url = (
-            f"https://t.me/nft/{quote(base_name, safe='')}-{gift.number}"
-            if base_name and gift.number is not None
-            else None
-        )
-        return {
-            "telegram_gift_id": None,
-            "telegram_owned_gift_id": info.owned_gift_id,
-            "gift_name": f"{gift.name} #{gift.number}" if gift.number is not None else gift.name,
-            "gift_url": gift_url,
-            "model_name": gift.model.name if gift.model else None,
-            "backdrop_name": gift.backdrop.name if gift.backdrop else None,
-            "symbol_name": gift.symbol.name if gift.symbol else None,
-            "metadata": info.model_dump(mode="json", exclude_none=True),
-        }
-
-    if message.gift:
-        info = message.gift
-        gift = info.gift
-        return {
-            "telegram_gift_id": str(gift.id),
-            "telegram_owned_gift_id": info.owned_gift_id,
-            "gift_name": f"Telegram gift {gift.id}",
-            "gift_url": None,
-            "model_name": None,
-            "backdrop_name": None,
-            "symbol_name": None,
-            "metadata": info.model_dump(mode="json", exclude_none=True),
-        }
-    raise ValueError("The message does not contain a Telegram gift.")
-
-
 @router.business_connection()
 async def update_business_connection(
     connection: BusinessConnection,
@@ -529,53 +490,6 @@ async def remember_business_recipient(
             "Observed recipient @%s through a Business chat",
             user.username,
         )
-
-
-@router.message(F.gift | F.unique_gift)
-async def receive_gift(message: Message, bot: Bot, store: MarketStore, settings: MarketSettings) -> None:
-    if message.chat.type != ChatType.PRIVATE:
-        return
-    user = message.from_user
-    if user is None:
-        return
-    if not await _user_has_market_access(user.id, bot, settings):
-        await message.answer("Регистрировать подарки могут только пользователи с доступом к Gift Relayer.")
-        return
-
-    details = _gift_details(message)
-    gift, created = await store.record_gift(
-        sender_id=user.id,
-        sender_username=user.username,
-        sender_name=user.full_name,
-        source_chat_id=message.chat.id,
-        source_message_id=message.message_id,
-        received_at=message.date,
-        **details,
-    )
-    if not created:
-        if gift["sender_id"] != user.id:
-            await message.answer("Этот уникальный подарок Telegram уже зарегистрирован.")
-            return
-        await message.answer(
-            f"Этот подарок уже сохранён. ID записи: <code>{gift['record_id']}</code>",
-            parse_mode="HTML",
-        )
-        return
-
-    if gift["offer_id"]:
-        offer_text = f"Связанный офер: <code>{gift['offer_id']}</code>."
-    else:
-        offer_text = (
-            "Не удалось однозначно связать подарок с принятым офером. "
-            "Если подарок относится к оферу, свяжите его командой "
-            f"<code>/linkgift {gift['record_id']} OFFER_ID</code>."
-        )
-    await message.answer(
-        f"Подарок сохранён со статусом <b>получен</b>.\n"
-        f"ID записи: <code>{gift['record_id']}</code>\n{offer_text}\n\n"
-        "Администратор банка должен проверить подарок в аккаунте, прежде чем отмечать его переданным.",
-        parse_mode="HTML",
-    )
 
 
 @router.message(Command("start"))
@@ -837,93 +751,6 @@ async def create_buy_offer(
         f"✅ Офер <code>{offer['id']}</code> отправлен пользователю Telegram "
         f"<code>{target_user_id}</code> от имени вашего Business-аккаунта.",
         parse_mode="HTML",
-    )
-
-
-@router.message(Command("linkgift"))
-async def link_gift(message: Message, bot: Bot, store: MarketStore, settings: MarketSettings) -> None:
-    user = message.from_user
-    if message.chat.type != ChatType.PRIVATE or user is None:
-        return
-    if not await _user_has_market_access(user.id, bot, settings):
-        await message.answer("Связывать подарки с оферами могут только пользователи с доступом к Gift Relayer.")
-        return
-    parts = (message.text or "").split()
-    if len(parts) != 3 or not _OFFER_ID_RE.fullmatch(parts[2]):
-        await message.answer("Формат: <code>/linkgift GIFT_RECORD_ID OFFER_ID</code>", parse_mode="HTML")
-        return
-    try:
-        record_id = str(UUID(parts[1]))
-    except ValueError:
-        await message.answer("Неверный ID записи подарка.")
-        return
-    gift = await store.link_gift_to_offer(record_id, parts[2], user.id)
-    if gift is None:
-        await message.answer(
-            "Не удалось связать подарок. Он должен принадлежать вам, а офер должен быть принят вами."
-        )
-        return
-    await message.answer(f"Подарок связан с офером <code>{parts[2]}</code>.", parse_mode="HTML")
-
-
-async def _is_offers_group_admin(message: Message, bot: Bot, settings: MarketSettings) -> bool:
-    user = message.from_user
-    group_id = settings.offers_group_id
-    if group_id is None or message.chat.id != group_id or user is None:
-        return False
-    member = await bot.get_chat_member(group_id, user.id)
-    return member.status in {ChatMemberStatus.CREATOR, ChatMemberStatus.ADMINISTRATOR}
-
-
-@router.message(Command("pendinggifts"))
-async def pending_gifts(message: Message, bot: Bot, store: MarketStore, settings: MarketSettings) -> None:
-    if not await _is_offers_group_admin(message, bot, settings):
-        return
-    pending = await store.pending_transfer_gifts()
-    if not pending:
-        await message.answer("Нет полученных подарков, ожидающих проверки передачи.")
-        return
-    lines = [
-        f"• <code>{gift['record_id']}</code> — {escape(gift['gift_name'])} "
-        f"(offer <code>{gift['offer_id']}</code>)"
-        for gift in pending[:10]
-    ]
-    await message.answer(
-        "Перед подтверждением проверьте каждый подарок в аккаунте банка:\n" + "\n".join(lines)
-        + f"\n\nИспользуйте <code>/confirmgift GIFT_RECORD_ID</code> только после проверки @{escape(settings.bank_username)}.",
-        parse_mode="HTML",
-    )
-
-
-@router.message(Command("confirmgift"))
-async def confirm_gift(
-    message: Message,
-    bot: Bot,
-    store: MarketStore,
-    settings: MarketSettings,
-) -> None:
-    if not await _is_offers_group_admin(message, bot, settings):
-        return
-    parts = (message.text or "").split()
-    if len(parts) != 2:
-        await message.answer("Формат: <code>/confirmgift GIFT_RECORD_ID</code>", parse_mode="HTML")
-        return
-    try:
-        record_id = str(UUID(parts[1]))
-    except ValueError:
-        await message.answer("Неверный ID записи подарка.")
-        return
-    gift, newly_confirmed = await store.confirm_gift_transfer(record_id)
-    if gift is None:
-        await message.answer("Подарок не найден, не связан с принятым офером или уже не ожидает проверки.")
-        return
-    if not newly_confirmed:
-        await message.answer("Этот подарок уже подтверждён; повторное уведомление не создавалось.")
-        return
-    await deliver_pending_gift_notifications(bot, store, settings)
-    await message.answer(
-        f"Передача подарка на @{escape(settings.bank_username)} подтверждена. "
-        "Уведомление отправлено в группу или поставлено в очередь на повторную отправку."
     )
 
 

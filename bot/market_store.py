@@ -7,7 +7,7 @@ from .market_database import MarketDatabase
 
 
 class MarketStore:
-    """Persistent offer and gift records."""
+    """Persistent offer records."""
 
     def __init__(self, database_url: str) -> None:
         self.database = MarketDatabase(database_url)
@@ -129,29 +129,3 @@ class MarketStore:
         return await self.database.change_offer(
             offer_id, seller_id, "accepted", "gift_sent", require_accepted_by=True
         )
-
-    async def record_gift(self, **gift: Any) -> tuple[dict[str, Any], bool]:
-        return await self.database.record_gift(**gift)
-
-    async def link_gift_to_offer(
-        self, record_id: str, offer_id: str, sender_id: int
-    ) -> dict[str, Any] | None:
-        return await self.database.link_gift_to_offer(record_id, offer_id, sender_id)
-
-    async def pending_transfer_gifts(self, limit: int = 20) -> list[dict[str, Any]]:
-        return await self.database.pending_transfer_gifts(limit)
-
-    async def confirm_gift_transfer(self, record_id: str) -> tuple[dict[str, Any] | None, bool]:
-        return await self.database.confirm_gift_transfer(record_id)
-
-    async def claim_pending_notifications(self, limit: int = 20) -> list[dict[str, Any]]:
-        return await self.database.claim_pending_notifications(limit)
-
-    async def finish_notification(
-        self,
-        record_id: str,
-        *,
-        message_id: int | None = None,
-        error: str | None = None,
-    ) -> None:
-        await self.database.finish_notification(record_id, message_id=message_id, error=error)

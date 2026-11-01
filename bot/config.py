@@ -50,9 +50,6 @@ class MarketSettings(BaseSettings):
     market_account_url: str = "tg://send_gift?to=questbankk"
     market_allowed_user_ids: str = ""
     market_access_chat_id: int | None = None
-    bank_username: str = "questbankk"
-    offers_group_id: int | None = None
-    gift_notification_retry_seconds: int = 60
     bot_mode: Literal["polling", "webhook"] = "polling"
     webhook_base_url: str = ""
     http_host: str = "0.0.0.0"
@@ -69,21 +66,6 @@ class MarketSettings(BaseSettings):
     @property
     def webhook_secret(self) -> str:
         return hashlib.sha256(b"quest-market-webhook:" + self.market_bot_token.encode()).hexdigest()
-
-    @field_validator("bank_username")
-    @classmethod
-    def normalize_bank_username(cls, value: str) -> str:
-        normalized = value.strip().lstrip("@")
-        if not normalized:
-            raise ValueError("BANK_USERNAME must not be empty")
-        return normalized
-
-    @field_validator("gift_notification_retry_seconds")
-    @classmethod
-    def validate_gift_notification_retry_seconds(cls, value: int) -> int:
-        if value < 5:
-            raise ValueError("GIFT_NOTIFICATION_RETRY_SECONDS must be at least 5")
-        return value
 
     @field_validator("market_allowed_user_ids")
     @classmethod
