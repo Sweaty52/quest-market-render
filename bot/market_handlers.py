@@ -150,7 +150,7 @@ _OFFER_TRANSLATIONS = {
         "transfer": "Перевести подарок",
         "transferred": "Я перевёл подарок",
         "how": "Как это работает",
-        "help": "Переведите подарок покупателю {recipient}, затем нажмите «Я перевёл подарок». Подтверждайте только после завершения перевода.",
+        "help": "Переведите подарок покупателю, затем нажмите «Я перевёл подарок». Подтверждайте только после завершения перевода.",
         "invalid": "Недействительный офер.",
         "transfer_unavailable": "Ссылка для перевода не настроена. Укажите MARKET_ACCOUNT_URL.",
         "unknown_action": "Неизвестное действие.",
@@ -175,7 +175,7 @@ _OFFER_TRANSLATIONS = {
         "transfer": "Transfer gift",
         "transferred": "I've transferred",
         "how": "How it works",
-        "help": "Transfer the collectible to {recipient}, then tap “I've transferred”. Only confirm after the transfer is complete.",
+        "help": "Transfer the collectible to the buyer, then tap “I've transferred”. Only confirm after the transfer is complete.",
         "invalid": "Invalid offer.",
         "transfer_unavailable": "The transfer link is not configured. Set MARKET_ACCOUNT_URL.",
         "unknown_action": "Unknown action.",
@@ -200,7 +200,7 @@ _OFFER_TRANSLATIONS = {
         "transfer": "转赠礼物",
         "transferred": "我已转赠",
         "how": "使用说明",
-        "help": "请将礼物转给 {recipient}，然后点击“我已转赠”。只有完成转赠后才能确认。",
+        "help": "请将礼物转给买家，然后点击“我已转赠”。只有完成转赠后才能确认。",
         "invalid": "报价无效。",
         "transfer_unavailable": "转赠链接尚未配置，请设置 MARKET_ACCOUNT_URL。",
         "unknown_action": "未知操作。",
@@ -1009,24 +1009,8 @@ async def offer_action(query: CallbackQuery, store: MarketStore, settings: Marke
         offer = await store.get_offer(offer_id)
         language = _normalize_offer_language(offer.get("language", "en")) if offer else "ru"
         text = _OFFER_TRANSLATIONS[language]
-        creator_username = (
-            await store.get_gift_recipient(offer["buyer_id"])
-            if offer is not None
-            else None
-        )
-        recipient = (
-            f"@{creator_username}"
-            if creator_username
-            else (
-                "аккаунт, настроенный автором офера"
-                if language == "ru"
-                else "the account configured by the offer creator"
-                if language == "en"
-                else "报价创建者设置的账号"
-            )
-        )
         await query.answer(
-            text["help"].format(recipient=recipient),
+            text["help"],
             show_alert=True,
         )
         return

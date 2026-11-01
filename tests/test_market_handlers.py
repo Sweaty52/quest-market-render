@@ -146,7 +146,7 @@ class MarketChatAccessTests(unittest.IsolatedAsyncioTestCase):
 
 
 class BusinessOfferTests(unittest.IsolatedAsyncioTestCase):
-    async def test_how_it_works_says_buyer_instead_of_user(self) -> None:
+    async def test_how_it_works_says_buyer_without_username(self) -> None:
         query = SimpleNamespace(
             data="qm:h:abcdef123456",
             from_user=SimpleNamespace(id=42),
@@ -158,12 +158,13 @@ class BusinessOfferTests(unittest.IsolatedAsyncioTestCase):
                 "buyer_id": 42,
                 "language": "ru",
             }),
-            get_gift_recipient=AsyncMock(return_value="questbankk"),
         )
 
         await offer_action(query, store, MarketSettings(market_bot_token="test-token"))
 
-        self.assertIn("покупателю @questbankk", query.answer.await_args.args[0])
+        self.assertIn("покупателю", query.answer.await_args.args[0])
+        self.assertNotIn("@", query.answer.await_args.args[0])
+        store.get_offer.assert_awaited_once_with("abcdef123456")
 
     async def test_authorized_user_can_set_gift_recipient(self) -> None:
         settings = MarketSettings(
