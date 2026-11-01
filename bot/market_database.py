@@ -559,22 +559,6 @@ class MarketDatabase:
             )
             return [_row_dict(row) for row in result.mappings()]
 
-    async def public_offers(self, limit: int) -> list[dict[str, Any]]:
-        now = datetime.now(timezone.utc)
-        async with self.engine.begin() as connection:
-            await connection.execute(
-                update(offers)
-                .where(and_(offers.c.status == "pending", offers.c.expires_at <= now))
-                .values(status="expired", updated_at=now)
-            )
-            result = await connection.execute(
-                select(offers)
-                .where(offers.c.status == "pending")
-                .order_by(offers.c.created_at.desc())
-                .limit(limit)
-            )
-            return [_row_dict(row) for row in result.mappings()]
-
     async def change_offer(
         self,
         offer_id: str,

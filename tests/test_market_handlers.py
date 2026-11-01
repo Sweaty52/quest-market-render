@@ -22,6 +22,7 @@ from bot.market_handlers import (
     create_buy_offer,
     offer_action,
     remember_business_recipient,
+    start,
     update_business_connection,
 )
 
@@ -186,6 +187,22 @@ class MarketChatAccessTests(unittest.IsolatedAsyncioTestCase):
         self.bot.get_chat_member.return_value = SimpleNamespace(status=ChatMemberStatus.LEFT)
 
         self.assertFalse(await _user_has_market_access(43, self.bot, self.settings))
+
+    async def test_start_explains_access_is_restricted_without_web_app(self) -> None:
+        message = SimpleNamespace(
+            from_user=SimpleNamespace(id=43, first_name="Guest"),
+            answer=AsyncMock(),
+        )
+
+        await start(
+            message,
+            SimpleNamespace(),
+            MarketSettings(market_bot_token="test-token"),
+        )
+
+        message.answer.assert_awaited_once_with(
+            "Доступ к Quest Market ограничен. Обратитесь к администратору."
+        )
 
 
 class BusinessOfferTests(unittest.IsolatedAsyncioTestCase):

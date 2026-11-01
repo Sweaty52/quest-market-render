@@ -1,11 +1,11 @@
 
-# Quest Market
+# Quest Market Bot
 
-Telegram collectible marketplace bot and Mini App.
+Telegram collectible marketplace bot. The Mini App and its catalog have been removed.
 
 ## Deploy on Render
 
-Create a Render Blueprint from this private repository. The Blueprint starts the webhook service and serves the Mini App from the same URL. Add these environment variables in Render:
+Create a Render Blueprint from this private repository. The Blueprint starts the bot webhook service and a minimal HTTP server for Telegram updates and Render health checks. Add these environment variables in Render:
 
 - `MARKET_BOT_TOKEN` — BotFather token for Quest Market.
 - `MARKET_DATABASE_URL` — internal connection URL for a Render PostgreSQL database. The bot refuses to start on Render with SQLite because the service filesystem is not persistent.
@@ -18,7 +18,7 @@ Create a Render Blueprint from this private repository. The Blueprint starts the
 
 Create the PostgreSQL database in Render, then copy its **internal** database URL into `MARKET_DATABASE_URL` in the web service's Environment settings. Do not commit or share the URL because it contains database credentials. Redeploy after setting it. Local development may use `MARKET_DATABASE_URL=sqlite+aiosqlite:///./data/quest_market.db`.
 
-The bot creates the `market_offers`, `market_offer_tokens`, `market_gifts`, `market_business_connections`, `market_business_recipients`, and `market_user_preferences` tables safely at startup. Offers, one-time offer codes, per-user gift-recipient preferences, gift records, and Telegram Business connections use PostgreSQL in production; the static catalog remains loaded from the project files. Each gift stores the Telegram sender, received time, status, Telegram metadata, and (when determinable) an immutable snapshot of the accepted offer and its creator. Telegram-owned gift IDs and source chat/message IDs are unique, so webhook retries do not create duplicate gift records. If multiple accepted offers match a sender, the bot leaves the gift unlinked rather than guessing.
+The bot creates the `market_offers`, `market_offer_tokens`, `market_gifts`, `market_business_connections`, `market_business_recipients`, and `market_user_preferences` tables safely at startup. Offers, one-time offer codes, per-user gift-recipient preferences, gift records, and Telegram Business connections use PostgreSQL in production. Each gift stores the Telegram sender, received time, status, Telegram metadata, and (when determinable) an immutable snapshot of the accepted offer and its creator. Telegram-owned gift IDs and source chat/message IDs are unique, so webhook retries do not create duplicate gift records. If multiple accepted offers match a sender, the bot leaves the gift unlinked rather than guessing.
 
 ### Send offers through Telegram Business
 
@@ -75,4 +75,4 @@ export OFFERS_GROUP_ID="-1004447182501"
 python3 -m bot.market_main
 ```
 
-In webhook mode, also set `RENDER_EXTERNAL_URL` or `WEBAPP_URL`; for local polling, leave `BOT_MODE=polling`.
+In webhook mode, Render supplies `RENDER_EXTERNAL_URL`; for a different host, set `WEBHOOK_BASE_URL` to its public HTTPS origin. For local polling, leave `BOT_MODE=polling`.

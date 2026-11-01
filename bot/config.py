@@ -54,17 +54,17 @@ class MarketSettings(BaseSettings):
     offers_group_id: int | None = None
     gift_notification_retry_seconds: int = 60
     bot_mode: Literal["polling", "webhook"] = "polling"
-    webapp_url: str = ""
-    webapp_host: str = "0.0.0.0"
-    webapp_port: int = 8080
+    webhook_base_url: str = ""
+    http_host: str = "0.0.0.0"
+    http_port: int = 8080
 
     @property
-    def public_webapp_url(self) -> str:
-        return (os.getenv("RENDER_EXTERNAL_URL") or self.webapp_url).rstrip("/")
+    def public_webhook_url(self) -> str:
+        return (os.getenv("RENDER_EXTERNAL_URL") or self.webhook_base_url).rstrip("/")
 
     @property
     def listen_port(self) -> int:
-        return int(os.getenv("PORT") or self.webapp_port)
+        return int(os.getenv("PORT") or self.http_port)
 
     @property
     def webhook_secret(self) -> str:
@@ -127,12 +127,12 @@ class MarketSettings(BaseSettings):
             raise ValueError("MARKET_ACCOUNT_URL must be a Telegram send_gift link or an HTTPS URL")
         return value
 
-    @field_validator("webapp_url")
+    @field_validator("webhook_base_url")
     @classmethod
-    def validate_webapp_url(cls, value: str) -> str:
+    def validate_webhook_base_url(cls, value: str) -> str:
         if not value:
             return value
         parsed = urlsplit(value)
         if parsed.scheme != "https" or not parsed.hostname:
-            raise ValueError("WEBAPP_URL must be a public HTTPS URL")
+            raise ValueError("WEBHOOK_BASE_URL must be a public HTTPS URL")
         return value

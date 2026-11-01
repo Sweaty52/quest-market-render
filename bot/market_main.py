@@ -4,14 +4,14 @@ import asyncio
 import logging
 
 from aiogram import Bot, Dispatcher
-from aiogram.types import BotCommand, MenuButtonWebApp, WebAppInfo
+from aiogram.types import BotCommand
 from pydantic import ValidationError
 
 from .config import MarketSettings
 from .gift_notifications import gift_notification_worker
 from .market_handlers import router
 from .market_store import MarketStore
-from .market_webapp import start_web_app
+from .market_http import start_http_server
 
 log = logging.getLogger(__name__)
 
@@ -24,7 +24,7 @@ async def main() -> None:
         missing = ", ".join("".join(str(part) for part in error["loc"]) for error in exc.errors())
         raise SystemExit(f"Missing or invalid Quest Market settings ({missing}). Check .env.") from None
 
-    if settings.public_webapp_url and settings.market_database_url.startswith("sqlite"):
+    if settings.public_webhook_url and settings.market_database_url.startswith("sqlite"):
         raise SystemExit(
             "Render requires a persistent PostgreSQL database. Set MARKET_DATABASE_URL before deploying."
         )
@@ -39,7 +39,6 @@ async def main() -> None:
     notification_task: asyncio.Task[None] | None = None
     try:
         await store.initialize()
-        gift_count = await store.seed_gift_links()
         me = await bot.get_me()
         await bot.set_my_commands([
             BotCommand(command="start", description="Начало и создание оферов"),
@@ -49,16 +48,12 @@ async def main() -> None:
             BotCommand(command="pendinggifts", description="Подарки, ожидающие проверки"),
             BotCommand(command="confirmgift", description="Подтвердить передачу подарка"),
         ])
-        if settings.public_webapp_url:
-            await bot.set_chat_menu_button(
-                menu_button=MenuButtonWebApp(text="Квест Маркет", web_app=WebAppInfo(url=settings.public_webapp_url))
-            )
-        web_runner = await start_web_app(settings, store, bot, dispatcher)
+        await bot.set_chat_menu_button()
+        web_runner = await start_http_server(settings, bot, dispatcher)
         log.info(
-            "Quest Market started as @%s with %d linked gifts; persistent offer and gift storage is active; Mini App listening on %s:%d",
+            "Quest Market started as @%s; persistent offer and gift storage is active; HTTP server listening on %s:%d",
             me.username,
-            gift_count,
-            settings.webapp_host,
+            settings.http_host,
             settings.listen_port,
         )
         if settings.offers_group_id is None:
@@ -69,15 +64,15 @@ async def main() -> None:
                 name="gift-notification-worker",
             )
         if settings.bot_mode == "webhook":
-            if not settings.public_webapp_url:
-                raise SystemExit("RENDER_EXTERNAL_URL or WEBAPP_URL is required in webhook mode.")
+            if not settings.public_webhook_url:
+                raise SystemExit("RENDER_EXTERNAL_URL or WEBHOOK_BASE_URL is required in webhook mode.")
             await bot.set_webhook(
-                url=f"{settings.public_webapp_url}/telegram/webhook",
+                url=f"{settings.public_webhook_url}/telegram/webhook",
                 secret_token=settings.webhook_secret,
                 allowed_updates=dispatcher.resolve_used_update_types(),
                 drop_pending_updates=False,
             )
-            log.info("Telegram webhook configured at %s/telegram/webhook", settings.public_webapp_url)
+            log.info("Telegram webhook configured at %s/telegram/webhook", settings.public_webhook_url)
             await asyncio.Event().wait()
         else:
             await dispatcher.start_polling(bot, allowed_updates=dispatcher.resolve_used_update_types())

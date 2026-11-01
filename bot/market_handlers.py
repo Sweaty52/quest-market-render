@@ -21,7 +21,6 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     LinkPreviewOptions,
     Message,
-    WebAppInfo,
 )
 
 from .config import MarketSettings
@@ -600,37 +599,8 @@ async def start(message: Message, bot: Bot, settings: MarketSettings) -> None:
             "посмотреть текущий — <code>/giftrecipient</code>."
         )
         await message.answer(text, parse_mode="HTML")
-    elif settings.public_webapp_url:
-        name = escape(message.from_user.first_name if message.from_user else "there", quote=True)
-        text = (
-            f"Добро пожаловать, {name} 👋\n\n"
-            "<b>QUEST MARKET</b>\n"
-            "Коллекционные предметы Telegram в одном месте.\n\n"
-            "🎁 Уникальные подарки\n"
-            "✦ Редкие username\n"
-            "＋ Коллекционные номера +888\n\n"
-            "Откройте каталог и выберите лот, чтобы посмотреть подробности."
-        )
-        await message.answer(
-            text,
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                InlineKeyboardButton(text="Открыть маркет", web_app=WebAppInfo(url=settings.public_webapp_url))
-            ], [
-                InlineKeyboardButton(text="Как это работает", callback_data="market:how")
-            ]]),
-        )
     elif not has_market_access:
-        await message.answer("Ссылка на маркет пока не настроена.")
-
-
-@router.callback_query(F.data == "market:how")
-async def market_how_it_works(callback: CallbackQuery) -> None:
-    await callback.answer(
-        "Просматривайте подарки, username и номера +888. Цены указаны в GRAM. "
-        "Откройте лот, чтобы перейти на его страницу в Telegram или создать офер.",
-        show_alert=True,
-    )
+        await message.answer("Доступ к Quest Market ограничен. Обратитесь к администратору.")
 
 
 @router.message(F.text.startswith(".buy") | F.text.startswith("/buy"))
