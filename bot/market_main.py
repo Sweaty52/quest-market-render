@@ -37,7 +37,6 @@ async def main() -> None:
     try:
         await store.initialize()
         me = await bot.get_me()
-        await bot.set_my_name(name="Gift Relayer")
         await bot.set_my_commands([])
         await bot.set_chat_menu_button()
         web_runner = await start_http_server(settings, bot, dispatcher)
