@@ -18,7 +18,7 @@ jobs:
         env:
           HEALTH_URL: https://quest-market.onrender.com/health
         run: |
-          requested_at=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+          requested_at=$(TZ=Europe/Kyiv date +'%Y-%m-%dT%H:%M:%S%z')
           if response=$(curl --silent --show-error --output /dev/null \
             --write-out "%{http_code} %{time_total}" \
             --max-time 120 \
@@ -71,7 +71,7 @@ jobs:
             result="FAILED"
           fi
 
-          text=$(printf 'Render health check: %s\nTime (UTC): %s\nHTTP: %s\nResponse: %ss\ncurl exit: %s' \
+          text=$(printf 'Render health check: %s\nTime (Europe/Kyiv): %s\nHTTP: %s\nResponse: %ss\ncurl exit: %s' \
             "$result" "${REQUESTED_AT:-unknown}" "${HTTP_STATUS:-000}" \
             "${RESPONSE_TIME:-unknown}" "${CURL_EXIT:-unknown}")
 
