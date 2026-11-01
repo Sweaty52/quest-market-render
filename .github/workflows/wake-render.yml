@@ -1,0 +1,29 @@
+name: Wake Render
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  wake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Request Render health endpoint
+        env:
+          HEALTH_URL: https://quest-market.onrender.com/health
+        run: |
+          status=$(curl --silent --show-error --output /dev/null \
+            --write-out "%{http_code}" \
+            --max-time 120 \
+            --retry 2 \
+            --retry-delay 10 \
+            --retry-connrefused \
+            "$HEALTH_URL")
+          if [ "$status" != "200" ]; then
+            echo "Render health check returned HTTP $status"
+            exit 1
+          fi

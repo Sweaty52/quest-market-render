@@ -60,7 +60,7 @@ No reliable price source is configured, so notifications show `Немає оці
 
 The bot must be an admin in `MARKET_ACCESS_CHAT_ID` for member checks and an admin with send-message permission in `OFFERS_GROUP_ID` so it can check which group admins may confirm transfers. Admins running `/confirmgift` must be Telegram admins of that exact group.
 
-Free Render web services may sleep after inactivity, so the first request can take time to wake the service.
+The `Wake Render` GitHub Actions workflow requests `/health` every 10 minutes to reduce idle spin-downs on the free Render service. GitHub may delay or skip scheduled runs, and Render may restart or suspend a free instance, so this is best-effort and does not guarantee 24/7 availability. Reliable always-on operation requires moving the Render web service to a paid plan. GitHub Actions must be enabled for this repository for the scheduled workflow to run.
 
 Offer messages display currency labels as plain text without emoji: `GRAM` or `Stars`.
 
