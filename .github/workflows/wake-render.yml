@@ -13,6 +13,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Request Render health endpoint
+        id: health
+        continue-on-error: true
         env:
           HEALTH_URL: https://quest-market.onrender.com/health
         run: |
@@ -31,9 +33,55 @@ jobs:
 
           status=${response%% *}
           elapsed=${response#* }
+          status=${status:-000}
+          elapsed=${elapsed:-unknown}
           echo "[$requested_at] GET /health -> HTTP ${status:-000}, ${elapsed:-unknown}s (curl exit $curl_exit)"
+          {
+            echo "requested_at=$requested_at"
+            echo "status=$status"
+            echo "elapsed=$elapsed"
+            echo "curl_exit=$curl_exit"
+          } >> "$GITHUB_OUTPUT"
 
           if [ "$curl_exit" -ne 0 ] || [ "$status" != "200" ]; then
             echo "Render health check failed"
             exit 1
           fi
+
+      - name: Send health status to Telegram
+        if: always()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          REQUESTED_AT: ${{ steps.health.outputs.requested_at }}
+          HTTP_STATUS: ${{ steps.health.outputs.status }}
+          RESPONSE_TIME: ${{ steps.health.outputs.elapsed }}
+          CURL_EXIT: ${{ steps.health.outputs.curl_exit }}
+          HEALTH_OUTCOME: ${{ steps.health.outcome }}
+        run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
+            echo "::warning::Telegram logging is not configured; add TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID repository secrets."
+            exit 0
+          fi
+
+          if [ "$HEALTH_OUTCOME" = "success" ]; then
+            result="OK"
+          else
+            result="FAILED"
+          fi
+
+          text=$(printf 'Render health check: %s\nTime (UTC): %s\nHTTP: %s\nResponse: %ss\ncurl exit: %s' \
+            "$result" "${REQUESTED_AT:-unknown}" "${HTTP_STATUS:-000}" \
+            "${RESPONSE_TIME:-unknown}" "${CURL_EXIT:-unknown}")
+
+          curl --silent --show-error --fail \
+            --max-time 20 \
+            --request POST \
+            --data-urlencode "chat_id=$TELEGRAM_CHAT_ID" \
+            --data-urlencode "text=$text" \
+            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --output /dev/null
+
+      - name: Fail workflow if Render health check failed
+        if: steps.health.outcome == 'failure'
+        run: exit 1
