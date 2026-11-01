@@ -260,7 +260,7 @@ class BusinessOfferTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIn(".qm 0123456789abcdef", message.answer.await_args.args[0])
 
-    async def test_business_code_claim_sends_offer_to_the_sender_and_is_not_remembered_as_username(self) -> None:
+    async def test_business_code_uses_private_chat_id_as_recipient(self) -> None:
         offer = {
             "id": "abcdef123456",
             "buyer_id": 42,
@@ -272,8 +272,8 @@ class BusinessOfferTests(unittest.IsolatedAsyncioTestCase):
         }
         bot = SimpleNamespace(
             send_message=AsyncMock(),
-            delete_business_messages=AsyncMock(return_value=True),
-            delete_message=AsyncMock(),
+            delete_business_messages=AsyncMock(),
+            delete_message=AsyncMock(return_value=True),
         )
         store = SimpleNamespace(
             claim_offer_token=AsyncMock(return_value=offer),
@@ -284,7 +284,7 @@ class BusinessOfferTests(unittest.IsolatedAsyncioTestCase):
             business_connection_id="business-connection-1",
             message_id=321,
             text=".qm 0123456789abcdef",
-            from_user=SimpleNamespace(id=900, username="recipient"),
+            from_user=SimpleNamespace(id=42, username="creator"),
         )
 
         await remember_business_recipient(message, bot, store)

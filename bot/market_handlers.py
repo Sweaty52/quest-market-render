@@ -284,10 +284,17 @@ async def remember_business_recipient(
     token_match = _OFFER_TOKEN_COMMAND_RE.fullmatch((message.text or "").strip())
     if token_match:
         await _delete_business_command(message, bot)
+        recipient_id = message.chat.id
+        if recipient_id <= 0:
+            log.warning(
+                "Ignoring offer code in non-user Business chat %s",
+                message.chat.id,
+            )
+            return
         offer = await store.claim_offer_token(
             token=token_match.group(1),
             connection_id=message.business_connection_id,
-            recipient_id=user.id,
+            recipient_id=recipient_id,
         )
         if offer is None:
             await bot.send_message(
@@ -298,7 +305,7 @@ async def remember_business_recipient(
             return
         try:
             await bot.send_message(
-                chat_id=user.id,
+                chat_id=recipient_id,
                 business_connection_id=message.business_connection_id,
                 text=_offer_text(offer, use_business_emojis=True),
                 parse_mode="HTML",
