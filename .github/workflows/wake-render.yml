@@ -53,14 +53,15 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_MESSAGE_THREAD_ID: ${{ secrets.TELEGRAM_MESSAGE_THREAD_ID }}
           REQUESTED_AT: ${{ steps.health.outputs.requested_at }}
           HTTP_STATUS: ${{ steps.health.outputs.status }}
           RESPONSE_TIME: ${{ steps.health.outputs.elapsed }}
           CURL_EXIT: ${{ steps.health.outputs.curl_exit }}
           HEALTH_OUTCOME: ${{ steps.health.outcome }}
         run: |
-          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
-            echo "::warning::Telegram logging is not configured; add TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID repository secrets."
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ] || [ -z "$TELEGRAM_MESSAGE_THREAD_ID" ]; then
+            echo "::warning::Telegram topic logging is not configured; add TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, and TELEGRAM_MESSAGE_THREAD_ID repository secrets."
             exit 0
           fi
 
@@ -78,6 +79,7 @@ jobs:
             --max-time 20 \
             --request POST \
             --data-urlencode "chat_id=$TELEGRAM_CHAT_ID" \
+            --data-urlencode "message_thread_id=$TELEGRAM_MESSAGE_THREAD_ID" \
             --data-urlencode "text=$text" \
             "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             --output /dev/null
